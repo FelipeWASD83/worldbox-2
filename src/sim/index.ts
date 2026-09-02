@@ -17,6 +17,10 @@ import { sistemaMoradia } from './moradia.js';
 import { sistemaVulcoes } from './vulcoes.js';
 import { sistemaClima } from './clima.js';
 import { sistemaBarcos } from './barcos.js';
+import { sistemaPolitica } from './politica.js';
+import { sistemaContato } from './contato.js';
+import { sistemaCultura } from './cultura.js';
+import { sistemaConhecimento } from './conhecimento.js';
 
 /**
  * Reconstrói o índice espacial. Precisa ser o primeiro sistema do tick: todos
@@ -62,9 +66,13 @@ export function montarPipeline(mundo: Mundo): void {
     sistemaColeta,
     sistemaMoradores,
     sistemaAldeias,
+    sistemaPolitica,
+    sistemaCultura,
+    sistemaConhecimento,
     sistemaEquipar,
     sistemaCerco,
     sistemaEconomia,
+    sistemaContato,
     sistemaDiplomacia,
     sistemaEstatisticas,
     sistemaMigracao,

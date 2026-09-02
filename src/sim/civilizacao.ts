@@ -1,7 +1,14 @@
 import type { Sistema } from '../core/sistemas.js';
-import { limiteDeTerritorio, type Aldeia, type Mundo } from '../core/mundo.js';
+import { limiteDeTerritorio, type Aldeia, type Mundo, RANCOR_POR_TERRITORIO } from '../core/mundo.js';
 import { Estado, MARCA_SOLDADO } from '../core/criaturas.js';
-import { ED, ED_MAXIMO, ED_MORADIA, ED_RESISTENCIA, edificios } from '../dados/edificios.js';
+import {
+  ED, ED_MATERIAL_MINIMO, ED_MAXIMO, ED_MORADIA, ED_RESISTENCIA, ED_TECNOLOGIA,
+  MAT_FATOR, MATERIAIS_DE_OBRA, edificios, materialDoAcabamento,
+} from '../dados/edificios.js';
+import { materialDoReino } from './conhecimento.js';
+import { Campo } from '../dados/tracos.js';
+import { fator, podemCruzar } from './genetica.js';
+import { tecnologias } from '../dados/tecnologias.js';
 import { BIOMA_HABITAVEL, biomas } from '../dados/biomas.js';
 import {
   acharLote, alcanceDaAldeia, ancoraDaConstrucao, derrubar, erguer, ligarAoCentro,
@@ -11,6 +18,7 @@ import { ESP_CIVILIZADO, ESP_NATALIDADE, TICKS_ANO, especies } from '../dados/es
 import { nomeDeAldeia } from '../dados/nomes.js';
 import { materialPorIndice } from './coleta.js';
 import { focoDe } from './comandos.js';
+import { empossarChefes } from './politica.js';
 import { BAL } from './balanco.js';
 
 /** A cada quantos ticks a gestão das aldeias é reavaliada. */
@@ -43,7 +51,12 @@ export const sistemaMoradores: Sistema = {
 
       const dx = a.x + 0.5 - c.x[i];
       const dy = a.y + 0.5 - c.y[i];
-      if (dx * dx + dy * dy > 4) continue; // ainda a caminho
+      // O celeiro atende quem **chegou à vila**, não quem pisou no tile exato
+      // da praça. Com dois tiles de tolerância e vilas espalhadas, o trabalhador
+      // faminto passava ao lado do próprio armazém e morria de fome com a
+      // aldeia cheia de comida — foram setecentas mortes assim em vinte e cinco
+      // mil ticks.
+      if (dx * dx + dy * dy > BAL.alcanceDoCeleiro * BAL.alcanceDoCeleiro) continue;
 
       if (c.carga[i] > 0) {
         const m = materialPorIndice(c.cargaMaterial[i]);
@@ -62,6 +75,14 @@ export const sistemaMoradores: Sistema = {
         // o que não cabe no celeiro se perde: é o que dá sentido a construir
         // mais armazém em vez de acumular para sempre
         a.estoque[m] = Math.min(a.capacidadeEstoque, a.estoque[m] + rendimento);
+        // Trabalho entregue vira dinheiro no bolso de quem entregou. É daqui
+        // que sai a fortuna que decide **quem governa a vila** — sem uma fonte
+        // de riqueza individual, "o cidadão mais rico" seria sempre um empate
+        // em zero (ver `src/sim/politica.ts`).
+        // Ganancioso embolsa mais da mesma carga; generoso, menos. É o que faz
+        // um traço decidir quem vira governante da vila, já que o cargo é do
+        // mais rico.
+        c.riqueza[i] += rendimento * BAL.salarioPorCarga * fator(c.tracos[i], Campo.ouro);
         c.carga[i] = 0;
         a.moral = Math.min(100, a.moral + 0.4);
       }
@@ -155,19 +176,43 @@ function gerirAldeia(mundo: Mundo, a: Aldeia): void {
     // comida — inflava os dois caminhos junto, e a casa perdia a dianteira de
     // novo. Aqui ela perde força sozinha, sem depender de eu reajustar nada.
     mundo.rng.chance(
-      (BAL.imigracaoParaAldeia * ESP_NATALIDADE[a.especie]) / (1 + a.casas * 0.6),
+      (BAL.imigracaoParaAldeia * ESP_NATALIDADE[a.especie]) / (1 + a.casas * 1.4),
     )
   ) {
+    // Quem chega nem sempre é do povo da casa. É por esta porta que dois povos
+    // passam a morar na mesma vila — e, sem ela, mestiço nenhum jamais nasceria
+    // no mundo: vila é fundada com um povo só, colônia herda o povo da mãe e a
+    // imigração de fora do mapa trazia sempre mais do mesmo. Ver
+    // `src/sim/genetica.ts`.
+    const povo = povoQueChega(mundo, a);
     const filho = mundo.nascer(
-      a.especie,
+      povo,
       a.x + mundo.rng.entre(-1.5, 1.5),
       a.y + mundo.rng.entre(-1.5, 1.5),
       TICKS_ANO * 2,
       'imigracao',
     );
     if (filho >= 0) {
-      mundo.criaturas.aldeia[filho] = a.id;
-      mundo.criaturas.reino[filho] = a.reino;
+      const c = mundo.criaturas;
+      c.aldeia[filho] = a.id;
+      c.reino[filho] = a.reino;
+      // Quem chega de fora **traz um sobrenome**. Sem isto, metade da população
+      // ficava sem linhagem nenhuma — e gente sem família não entra na conta da
+      // sucessão, não herda e não pode ver a própria casa chegar ao trono.
+      // Uma parte se junta a uma família que já mora aqui (é o casamento de
+      // quem chega); o resto funda a sua.
+      const anfitria = familiaDaCasa(mundo, a);
+      c.familia[filho] = anfitria >= 0 && mundo.rng.chance(0.6)
+        ? anfitria
+        : mundo.novaFamilia();
+      // Quem chega de fora traz também **um clã**. Uma parte se dissolve no clã
+      // de quem já manda ali; o resto forma o seu, e é essa minoria que um dia
+      // vai achar que não é mais representada. Ver `src/sim/cultura.ts`.
+      if (mundo.rng.chance(BAL.chanceDeClaNovo) || a.governante < 0) {
+        c.cla[filho] = mundo.criarCla(a.especie).id;
+      } else if (c.vivo[a.governante] === 1) {
+        c.cla[filho] = c.cla[a.governante];
+      }
       a.populacao++;
       a.estoque.comida -= BAL.comidaPorNascimento;
     }
@@ -189,7 +234,7 @@ function gerirAldeia(mundo: Mundo, a: Aldeia): void {
   // Vila cheia é o gatilho principal: sem espaço para crescer onde está, o
   // caminho do reino é fundar outra. Uma vila com folga só coloniza de vez em
   // quando, por iniciativa própria.
-  const semEspaco = a.tilesTerritorio >= a.limiteTerritorio * 0.9;
+  const semEspaco = a.tilesTerritorio >= a.limiteTerritorio * 0.82;
   const podePagar = a.estoque.comida > 120 && a.estoque.madeira > 40;
   if (a.populacao >= BAL.populacaoParaColonizar && podePagar) {
     if (mundo.rng.chance(semEspaco ? BAL.chanceColonizarLotada : BAL.chanceColonizar)) {
@@ -215,43 +260,146 @@ function expandirTerritorio(mundo: Mundo, a: Aldeia): void {
   a.limiteTerritorio = limiteDeTerritorio(a.nivel);
   if (a.tilesTerritorio >= a.limiteTerritorio) return;
 
-  const r = a.raio;
-  const r2 = r * r;
+  if (a.franja.length === 0) refazerFranja(mundo, a);
+  if (a.franja.length === 0) return; // cercada por todos os lados
+
+  const viz = mundo.bufVizinhos;
   let ganhos = 0;
-  for (let y = a.y - r; y <= a.y + r; y++) {
-    if (y < 0 || y >= g.altura) continue;
-    for (let x = a.x - r; x <= a.x + r; x++) {
-      if (x < 0 || x >= g.largura) continue;
-      const dx = x - a.x;
-      const dy = y - a.y;
-      if (dx * dx + dy * dy > r2) continue;
-      const i = g.idx(x, y);
-      if (g.ehAgua(i)) continue;
-      const dono = g.aldeiaDona[i];
-      if (dono === a.id) continue;
-      if (dono >= 0) {
-        // território de outra aldeia: só toma se a de fora for mais forte
-        const outra = mundo.aldeias[dono];
-        if (outra?.ativa) {
-          const distOutra = Math.hypot(outra.x - x, outra.y - y);
-          const distEsta = Math.hypot(dx, dy);
-          if (distOutra <= distEsta || outra.nivel >= a.nivel) continue;
-          // quem perde o tile perde a conta dele, senão fica com o contador
-          // inflado e nunca mais consegue expandir
-          outra.tilesTerritorio = Math.max(0, outra.tilesTerritorio - 1);
+  let tentativas = 0;
+  // Quantos tiles foram arrancados de cada reino nesta passada. A mágoa é
+  // lançada uma vez no fim, e não tile a tile: uma passada toma dezenas de
+  // tiles, e cobrar cada um separado encheria o rancor no primeiro avanço.
+  const arrancados = new Map<number, number>();
+  const cabe = a.limiteTerritorio - a.tilesTerritorio;
+  const teto = Math.min(BAL.tilesPorExpansao, cabe);
+
+  // Cada passada come um punhado da fila da fronteira. O teto de tentativas
+  // existe porque a fila junta muito tile inútil — água, rocha, chão de vizinho
+  // mais forte — e sem ele uma vila cercada de mar varreria a fila inteira toda
+  // vez sem tomar nada.
+  while (ganhos < teto && tentativas < teto * 6 && a.franja.length > 0) {
+    tentativas++;
+    // Tira de posição sorteada, e não do fim: tirando sempre da mesma ponta a
+    // vila crescia em faixa reta, porque a fila é preenchida em ordem de
+    // vizinhança.
+    const k = mundo.rng.int(a.franja.length);
+    const i = a.franja[k];
+    a.franja[k] = a.franja[a.franja.length - 1];
+    a.franja.pop();
+
+    if (!podeTomar(mundo, a, i)) continue;
+
+    const x = i % g.largura;
+    const y = (i / g.largura) | 0;
+    const dono = g.aldeiaDona[i];
+    if (dono >= 0) {
+      const outra = mundo.aldeias[dono];
+      if (outra?.ativa) {
+        outra.tilesTerritorio = Math.max(0, outra.tilesTerritorio - 1);
+        if (outra.reino !== a.reino) {
+          arrancados.set(outra.reino, (arrancados.get(outra.reino) ?? 0) + 1);
         }
       }
-      g.aldeiaDona[i] = a.id;
-      g.territorio[i] = a.reino;
-      g.marcarSujo(x, y);
-      ganhos++;
-      if (a.tilesTerritorio + ganhos >= a.limiteTerritorio) {
-        a.tilesTerritorio += ganhos;
-        return;
-      }
+    }
+    g.aldeiaDona[i] = a.id;
+    g.territorio[i] = a.reino;
+    g.marcarSujo(x, y);
+    ganhos++;
+
+    // a fronteira avança: os vizinhos deste tile viram candidatos
+    const n = g.vizinhos4(x, y, viz);
+    for (let v = 0; v < n; v++) {
+      const j = viz[v];
+      if (g.aldeiaDona[j] === a.id) continue;
+      if (a.franja.length < BAL.franjaMaxima) a.franja.push(j);
     }
   }
   a.tilesTerritorio += ganhos;
+
+  // Tomar chão do vizinho é ofensa de Estado, e fica registrada. É um dos
+  // motivos que a diplomacia soma na hora de decidir a guerra seguinte.
+  for (const [reino, quantos] of arrancados) {
+    mundo.acumularRancor(reino, a.reino, quantos * RANCOR_POR_TERRITORIO);
+  }
+}
+
+/** A vila pode tomar este tile? */
+function podeTomar(mundo: Mundo, a: Aldeia, i: number): boolean {
+  const g = mundo.grid;
+  if (i < 0 || i >= g.total) return false;
+  if (g.ehAgua(i)) return false;
+  const dono = g.aldeiaDona[i];
+  if (dono === a.id) return false;
+  if (dono < 0) return true;
+
+  // Chão de outra vila só muda de mãos para quem é mais forte. Sem isso duas
+  // vizinhas trocariam a mesma faixa de terra para sempre, e a fronteira
+  // ficaria tremendo entre as duas sem nunca assentar.
+  const outra = mundo.aldeias[dono];
+  if (!outra?.ativa) return true;
+  if (outra.nivel > a.nivel) return false;
+  if (outra.nivel === a.nivel && outra.populacao >= a.populacao) return false;
+  return true;
+}
+
+/**
+ * Reconstrói a fila de fronteira a partir do que a vila domina hoje.
+ *
+ * Chamada quando a fila esvazia — no começo da vida da aldeia, depois de
+ * carregar um save, ou quando a vila esteve cercada e um vizinho abriu espaço.
+ * Varre o entorno uma vez; é caro e por isso não roda toda passada.
+ */
+function refazerFranja(mundo: Mundo, a: Aldeia): void {
+  const g = mundo.grid;
+  const viz = mundo.bufVizinhos;
+  a.franja.length = 0;
+
+  // vila recém-fundada ainda não tem nada: a fronteira é o próprio centro
+  if (a.tilesTerritorio === 0) {
+    a.franja.push(g.idx(a.x, a.y));
+    return;
+  }
+
+  // O alcance da busca acompanha o tamanho do que ela domina, e não o raio de
+  // construção: com território em forma livre, os dois deixaram de coincidir.
+  const alcance = Math.ceil(Math.sqrt(a.tilesTerritorio)) + 6;
+  const x0 = Math.max(0, a.x - alcance);
+  const x1 = Math.min(g.largura - 1, a.x + alcance);
+  const y0 = Math.max(0, a.y - alcance);
+  const y1 = Math.min(g.altura - 1, a.y + alcance);
+
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      const i = g.idx(x, y);
+      if (g.aldeiaDona[i] !== a.id) continue;
+      const n = g.vizinhos4(x, y, viz);
+      for (let v = 0; v < n; v++) {
+        const j = viz[v];
+        if (g.aldeiaDona[j] === a.id) continue;
+        if (a.franja.length < BAL.franjaMaxima) a.franja.push(j);
+      }
+    }
+  }
+}
+
+/**
+ * Uma família que já mora na vila, sorteada entre os moradores.
+ *
+ * Serve para quem chega de fora se casar em vez de fundar sempre uma linhagem
+ * nova — sem isso o mundo enche de famílias de um membro só, e a sucessão por
+ * "família mais rica" perde o sentido, porque nenhuma família acumula nada.
+ */
+function familiaDaCasa(mundo: Mundo, a: Aldeia): number {
+  const c = mundo.criaturas;
+  let vistas = 0;
+  let escolhida = -1;
+  for (let i = 0; i < c.limite; i++) {
+    if (!c.vivo[i] || c.aldeia[i] !== a.id || c.familia[i] < 0) continue;
+    vistas++;
+    // amostragem por reservatório: uma passada, sem montar lista
+    if (mundo.rng.int(vistas) === 0) escolhida = c.familia[i];
+  }
+  return escolhida;
 }
 
 /** Escolhe o que a aldeia precisa e ergue, se houver material e espaço. */
@@ -278,10 +426,22 @@ function construirAlgo(mundo: Mundo, a: Aldeia): boolean {
   const lavouraSolta = a.moinhosIdx.length === 0;
   const roçasDemais = lavouraSolta && a.predios[ED.fazenda] >= BAL.rocasSemMoinho;
 
+  // De que este povo constrói hoje: o melhor material que a árvore de
+  // tecnologia do reino alcança. Ver `src/sim/conhecimento.ts`.
+  const material = materialDoReino(reino);
+
   const fila: Array<[boolean, number]> = [
     // sobrevivência
     [roçasDemais && a.nivel >= 2, ED.moinho],
     [a.estoque.comida < a.populacao * 8 && !roçasDemais, ED.fazenda],
+    // A fogueira é a moradia de quem ainda não descobriu o abrigo. Vem antes da
+    // casa porque, enquanto a casa estiver trancada, é ela ou nada: sem
+    // moradia nenhuma um povo tribal não tem filho e o mundo trava na largada.
+    [
+      !mundo.reinoSabe(a.reino, TEC_ABRIGO)
+        && a.predios[ED.fogueira] * ED_MORADIA[ED.fogueira] < a.populacao + 2,
+      ED.fogueira,
+    ],
     // Casa não é só teto: é onde nascem os filhos. A aldeia constrói assim que
     // falta cama, e não só quando está lotada — senão nunca sai do lugar, já
     // que sem casa não nasce gente e sem gente não se levanta casa.
@@ -309,6 +469,15 @@ function construirAlgo(mundo: Mundo, a: Aldeia): boolean {
       foco === 'comida' && a.estoque.comida < a.capacidadeEstoque * 0.8 && !roçasDemais,
       ED.fazenda,
     ],
+
+    // O **primeiro** mercado sobe na fila, e só ele. É o prédio que liga a vila
+    // ao resto do mundo: sem mercado não sai caravana, e sem caravana o ouro do
+    // reino não circula. Lá embaixo, entre os marcos, ele tinha peso 0,72^20 e
+    // simplesmente não era construído — três de quatro sementes terminavam
+    // vinte mil ticks com zero negócios fechados, não porque o comércio
+    // estivesse quebrado, mas porque não havia onde comerciar. O segundo
+    // mercado continua no lugar antigo, com os outros marcos.
+    [a.nivel >= 3 && a.predios[ED.mercado] === 0, ED.mercado],
 
     // conforto e produção
     [a.nivel >= 2 && cabeMais(a, ED.poco, ED_MAXIMO[ED.poco]), ED.poco],
@@ -353,8 +522,14 @@ function construirAlgo(mundo: Mundo, a: Aldeia): boolean {
     if (!vale) continue;
     const opcao = edificios.porIndice(tipo);
     if (opcao.nivelMinimo > a.nivel) continue;
-    if (a.estoque.madeira < opcao.custoMadeira) continue;
-    if (a.estoque.pedra < opcao.custoPedra) continue;
+    // O reino sabe erguer isto? É a tranca nova da fase 4, e é ela que faz uma
+    // tribo começar o mundo sem casa, sem lavoura e sem forja.
+    if (!mundo.reinoSabe(a.reino, ED_TECNOLOGIA[tipo])) continue;
+    // E sabe trabalhar o material que isto exige? Castelo não se levanta de
+    // palha por mais rico que o reino esteja.
+    if (material < ED_MATERIAL_MINIMO[tipo]) continue;
+    if (a.estoque.madeira < custoEmMadeira(tipo, material)) continue;
+    if (a.estoque.pedra < custoEmPedra(tipo, material)) continue;
     candidatos.push(tipo);
     pesos.push(peso);
     soma += peso;
@@ -377,16 +552,36 @@ function construirAlgo(mundo: Mundo, a: Aldeia): boolean {
   const tile = acharLote(mundo, a, escolha);
   if (tile < 0) return false;
 
-  erguer(mundo, a, tile, escolha);
+  // O prédio sai do melhor material que o reino domina, respeitado o piso do
+  // próprio prédio — nunca abaixo dele, e nunca acima do que se sabe fazer.
+  const materialDaObra = Math.max(material, ED_MATERIAL_MINIMO[escolha]);
+  erguer(mundo, a, tile, escolha, materialDaObra);
   // toda obra nasce ligada à praça: é o que transforma um punhado de telhados
   // espalhados num povoado com ruas
   ligarAoCentro(mundo, a, tile % mundo.grid.largura, (tile / mundo.grid.largura) | 0);
   const semeia = edificios.porIndice(escolha).semeiaEmVolta;
   if (semeia) semearEmVolta(mundo, a, tile, semeia);
 
-  a.estoque.madeira -= def.custoMadeira;
-  a.estoque.pedra -= def.custoPedra;
+  a.estoque.madeira -= custoEmMadeira(escolha, materialDaObra);
+  a.estoque.pedra -= custoEmPedra(escolha, materialDaObra);
+  void def;
   return true;
+}
+
+/**
+ * Quanto custa erguer aquele prédio naquele material.
+ *
+ * Material melhor custa mais pedra e, em compensação, menos madeira: uma parede
+ * de alvenaria gasta cantaria onde a de tábua gastaria viga. A conta fica aqui,
+ * numa função só, porque ela é consultada duas vezes — para saber se dá para
+ * pagar e para pagar — e as duas leituras não podem discordar.
+ */
+export function custoEmMadeira(tipo: number, material: number): number {
+  return edificios.porIndice(tipo).custoMadeira * MATERIAIS_DE_OBRA[material].custoMadeira;
+}
+
+export function custoEmPedra(tipo: number, material: number): number {
+  return edificios.porIndice(tipo).custoPedra * MATERIAIS_DE_OBRA[material].custoPedra;
 }
 
 /**
@@ -411,6 +606,35 @@ export function nivelDeForja(a: Aldeia): number {
 /** A aldeia tem mercado funcionando? */
 export function temMercado(a: Aldeia): boolean {
   return a.predios[ED.mercado] > 0;
+}
+
+/** Índice da tecnologia do abrigo, resolvido uma vez. */
+const TEC_ABRIGO = tecnologias.indice('abrigo');
+
+/**
+ * De que povo é o próximo a chegar naquela vila.
+ *
+ * Quase sempre o povo da própria vila. De vez em quando é alguém de um povo
+ * vizinho — e as condições são as mesmas que a diplomacia já usa: tem de ser um
+ * reino que o daqui **conhece**, com quem não está em guerra, e de um povo que
+ * o daqui tolera o bastante para casar (`podemCruzar`).
+ *
+ * É de propósito que isso dependa da política: um mundo em que humanos e elfos
+ * nunca se encontraram não produz meio-elfo, e um mundo em que eles comerciam
+ * há séculos produz. A mestiçagem passa a ser uma consequência da história em
+ * vez de um dado sorteado no vácuo.
+ */
+function povoQueChega(mundo: Mundo, a: Aldeia): number {
+  if (!mundo.rng.chance(BAL.imigracaoDeOutroPovo)) return a.especie;
+  const candidatos: number[] = [];
+  for (const r of mundo.reinos) {
+    if (!r.ativo || r.especie === a.especie) continue;
+    if (!mundo.conhece(a.reino, r.id) || mundo.emGuerra(a.reino, r.id)) continue;
+    if (!podemCruzar(a.especie, r.especie)) continue;
+    candidatos.push(r.especie);
+  }
+  if (candidatos.length === 0) return a.especie;
+  return candidatos[mundo.rng.int(candidatos.length)];
 }
 
 /** Quantas fazendas a aldeia tem trabalhando. */
@@ -456,6 +680,10 @@ export function colonizarAPartirDe(mundo: Mundo, mae: Aldeia): void {
     if (!g.ehTerra(i) || g.ehMontanha(i)) continue;
     if (BIOMA_HABITAVEL[g.bioma[i]] <= 0.1) continue;
     if (mundo.aldeiaMaisProxima(x, y, BAL.distanciaEntreAldeias) >= 0) continue;
+    // Chão de ninguém, e não só longe de aldeia: colônia fundada dentro do
+    // território de outra vila nasce sem ter o que dominar, e agora que a obra
+    // exige território próprio ela nem chega a construir a primeira casa.
+    if (g.aldeiaDona[i] !== -1) continue;
 
     let nota = BIOMA_HABITAVEL[g.bioma[i]];
     const nomeB = nomeDoBioma(g.bioma[i]);
@@ -481,9 +709,16 @@ export function colonizarAPartirDe(mundo: Mundo, mae: Aldeia): void {
   const c = mundo.criaturas;
   let enviados = 0;
   const quota = Math.max(2, Math.floor(mae.populacao * 0.25));
+  // Quem sai costuma ser quem já não se via na terra de origem. Uma parte das
+  // colônias nasce, por isso, com clã próprio — e é a semente de uma província
+  // que um dia se separa.
+  const claDaColonia = mundo.rng.chance(BAL.chanceDeClaNovo)
+    ? mundo.criarCla(mae.especie).id
+    : -1;
   for (let i = 0; i < c.limite && enviados < quota; i++) {
     if (!c.vivo[i] || c.aldeia[i] !== mae.id) continue;
     c.aldeia[i] = nova.id;
+    if (claDaColonia >= 0) c.cla[i] = claDaColonia;
     c.destinoX[i] = x;
     c.destinoY[i] = y;
     c.estado[i] = Estado.Voltando;
@@ -491,6 +726,7 @@ export function colonizarAPartirDe(mundo: Mundo, mae: Aldeia): void {
     nova.populacao++;
     enviados++;
   }
+  empossarChefes(mundo, nova);
 }
 
 /** Id de texto de cada bioma, por índice — montado uma vez. */
@@ -524,12 +760,9 @@ function atualizarReinos(mundo: Mundo): void {
       const a = mundo.aldeias[idA];
       if (a?.ativa) r.territorio += a.tilesTerritorio;
     }
-    const forca = r.populacao + r.territorio / 12;
-    const eraNova = forca > 260 ? 3 : forca > 130 ? 2 : forca > 45 ? 1 : 0;
-    if (eraNova > r.era) {
-      r.era = eraNova;
-      mundo.eventos.emitir('reino:eraNova', { reino: r.id, era: r.era });
-    }
+    // A era não é mais calculada aqui. Ela era um número tirado de população e
+    // território que não decidia nada; hoje é a era da tecnologia mais avançada
+    // que o reino domina, e quem a move é `src/sim/conhecimento.ts`.
   }
 
   // soldados: só existem enquanto há guerra
@@ -544,9 +777,14 @@ function atualizarReinos(mundo: Mundo): void {
     if (reino >= 0 && emGuerra.has(reino)) {
       // fatia estável: sempre os mesmos índices viram soldado
       const a = c.aldeia[i] >= 0 ? mundo.aldeias[c.aldeia[i]] : undefined;
-      const fatia = a && focoDe(a) === 'exercito'
+      let fatia = a && focoDe(a) === 'exercito'
         ? BAL.fracaoSoldadosEmGuerraTotal
         : BAL.fracaoSoldados;
+      // O clã puxa a fatia: um clã guerreiro manda quase todo mundo para a
+      // frente, um clã de lavradores quase ninguém. É o primeiro lugar onde os
+      // valores de clã saem do papel e viram comportamento.
+      const cla = mundo.cla(c.cla[i]);
+      if (cla) fatia *= 1 + (cla.marcialidade - 0.5) * BAL.pesoDoClaNoExercito;
       if ((i % 100) / 100 < fatia) c.marcas[i] |= MARCA_SOLDADO;
     } else if ((c.marcas[i] & MARCA_SOLDADO) !== 0) {
       c.marcas[i] &= ~MARCA_SOLDADO;
@@ -585,7 +823,9 @@ export const sistemaCerco: Sistema = {
       if (!mundo.emGuerra(meuReino, dona.reino)) continue;
 
       // pancada proporcional à resistência do que está sendo derrubado
-      if (mundo.rng.chance(24 / (ED_RESISTENCIA[construcao - 1] + 24))) {
+      const dureza = ED_RESISTENCIA[construcao - 1]
+        * MAT_FATOR[materialDoAcabamento(g.acabamento[alvo])];
+      if (mundo.rng.chance(24 / (dureza + 24))) {
         derrubar(mundo, alvo, construcao - 1 !== ED.ruina);
         dona.moral -= 3;
         mundo.recalcularCapacidade(dona);

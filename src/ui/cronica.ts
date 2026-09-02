@@ -1,5 +1,8 @@
 import type { Mundo } from '../core/mundo.js';
 import { especies } from '../dados/especies.js';
+import { nomeDeCriatura } from '../dados/nomes.js';
+import { NOME_ERA, tecnologias } from '../dados/tecnologias.js';
+import { tracos } from '../dados/tracos.js';
 
 /**
  * A crônica do mundo: só os acontecimentos que valem uma linha.
@@ -11,12 +14,15 @@ const MAX_LINHAS = 220;
 
 export class Cronica {
   private desligar: Array<() => void> = [];
+  /** Povos mestiços que já ganharam a linha de estreia deles. */
+  private mesticosVistos = new Set<number>();
 
   constructor(private lista: HTMLUListElement) {}
 
   ligar(mundo: Mundo): void {
     for (const fn of this.desligar) fn();
     this.desligar = [];
+    this.mesticosVistos.clear();
     this.lista.replaceChildren();
 
     const ev = mundo.eventos;
@@ -28,17 +34,42 @@ export class Cronica {
       ev.on('reino:guerra', (d) => {
         const a = mundo.reinos[d.a]?.nome ?? '?';
         const b = mundo.reinos[d.b]?.nome ?? '?';
-        this.escrever(ano(), `${a} declarou guerra a ${b}.`, 'guerra');
+        // O motivo é o casus belli que mais pesou na decisão. Ler a crônica
+        // passa a explicar o mapa: "guerra por ódio antigo aos orcs" diz uma
+        // coisa, "disputa de fronteira" diz outra bem diferente.
+        this.escrever(ano(), `${a} declarou guerra a ${b} — ${d.motivo}.`, 'guerra');
+      }),
+      ev.on('reino:conheceu', (d) => {
+        const a = mundo.reinos[d.a]?.nome ?? '?';
+        const b = mundo.reinos[d.b]?.nome ?? '?';
+        this.escrever(ano(), `${a} e ${b} souberam um do outro pela primeira vez.`);
       }),
       ev.on('reino:paz', (d) => {
         const a = mundo.reinos[d.a]?.nome ?? '?';
         const b = mundo.reinos[d.b]?.nome ?? '?';
         this.escrever(ano(), `${a} e ${b} fizeram as pazes.`, 'paz');
       }),
-      ev.on('reino:eraNova', (d) => {
-        const nomes = ['tribal', 'de aldeias', 'de reino', 'imperial'];
+      ev.on('criatura:mesticou', (d) => {
+        // Só a primeira vez que cada povo mestiço aparece. Depois disso são
+        // centenas de nascimentos, e a crônica é para o que muda o mapa.
+        if (this.mesticosVistos.has(d.especie)) return;
+        this.mesticosVistos.add(d.especie);
+        const povo = especies.porIndice(d.especie);
+        const a = especies.porIndice(d.pai).plural;
+        const b = especies.porIndice(d.mae).plural;
+        this.escrever(ano(), `Nasceu o primeiro ${povo.nome}, de ${a} e ${b}.`, 'paz');
+      }),
+      ev.on('criatura:prodigio', (d) => {
+        const nome = nomeDeCriatura(mundo.semente, d.id, especies.porIndice(d.especie).id);
+        this.escrever(ano(), `${nome} nasceu ${tracos.porIndice(d.traco).nome}.`, 'paz');
+      }),
+      ev.on('reino:descobriu', (d) => {
         const r = mundo.reinos[d.reino];
-        if (r) this.escrever(ano(), `${r.nome} entrou na era ${nomes[d.era] ?? d.era}.`);
+        if (r) this.escrever(ano(), `${r.nome} descobriu ${tecnologias.porIndice(d.tecnologia).nome}.`);
+      }),
+      ev.on('reino:eraNova', (d) => {
+        const r = mundo.reinos[d.reino];
+        if (r) this.escrever(ano(), `${r.nome} entrou na era ${NOME_ERA[d.era] ?? d.era}.`, 'paz');
       }),
       ev.on('aldeia:fundada', (d) => {
         const a = mundo.aldeias[d.aldeia];
@@ -57,6 +88,35 @@ export class Cronica {
         const a = mundo.aldeias[d.aldeia];
         const nomes = ['', 'acampamento', 'aldeia', 'vila', 'cidade', 'metrópole'];
         if (a) this.escrever(ano(), `${a.nome} virou ${nomes[d.nivel] ?? 'algo maior'}.`);
+      }),
+      ev.on('reino:coroou', (d) => {
+        const r = mundo.reinos[d.reino];
+        if (!r) return;
+        const esp = especies.porIndice(mundo.criaturas.especie[d.quem]).id;
+        const nome = nomeDeCriatura(mundo.semente, d.quem, esp);
+        // A troca de dinastia é a notícia grande: quem lê a crônica precisa
+        // distinguir "morreu o rei, entrou o filho" de "a casa acabou e outra
+        // família tomou o trono".
+        const trocouDeCasa = d.antes >= 0 && d.casa !== mundo.criaturas.familia[d.antes];
+        this.escrever(
+          ano(),
+          trocouDeCasa
+            ? `A casa real de ${r.nome} se extinguiu. ${nome} tomou o trono.`
+            : `${nome} foi coroado em ${r.nome}.`,
+          trocouDeCasa ? 'guerra' : undefined,
+        );
+      }),
+      ev.on('reino:rebeliao', (d) => {
+        const novo = mundo.reinos[d.novo]?.nome ?? '?';
+        const antigo = mundo.reinos[d.antigo]?.nome ?? '?';
+        const onde = mundo.aldeias[d.aldeia]?.nome ?? '?';
+        this.escrever(
+          ano(),
+          d.vilas > 1
+            ? `${onde} e mais ${d.vilas - 1} vila(s) se separaram de ${antigo} e fundaram ${novo}.`
+            : `${onde} se separou de ${antigo} e fundou ${novo}.`,
+          'guerra',
+        );
       }),
       ev.on('reino:alianca', (d) => {
         const a = mundo.reinos[d.a]?.nome ?? '?';

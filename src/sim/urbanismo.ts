@@ -1,6 +1,8 @@
 import type { Grid } from '../core/grid.js';
 import type { Aldeia, Mundo } from '../core/mundo.js';
-import { ED, ED_MONTANHA, ED_NA_AGUA, ED_NATURAL, ED_OCUPA } from '../dados/edificios.js';
+import {
+  ED, ED_MONTANHA, ED_NA_AGUA, ED_NATURAL, ED_OCUPA, empacotarAcabamento,
+} from '../dados/edificios.js';
 import { B, BIOMA_HABITAVEL } from '../dados/biomas.js';
 import { REC_MATERIAL } from '../dados/recursos.js';
 
@@ -27,7 +29,7 @@ import { REC_MATERIAL } from '../dados/recursos.js';
  * resultado eram casas erguidas fora da conta (que não abrigavam ninguém),
  * lavouras que não rendiam e prédios fantasmas que nunca saíam do mapa.
  */
-export function alcanceDaAldeia(a: { raio: number }): number {
+export function alcanceDaAldeia(a: { raio: number; tilesTerritorio?: number }): number {
   return aneisDaAldeia(a) * PASSO + LOTE + 2;
 }
 
@@ -41,8 +43,16 @@ export function alcanceDaAldeia(a: { raio: number }): number {
  * eram abandonadas por falta de lote — a vila acumulava mil e setecentos de
  * madeira sem conseguir levantar uma prefeitura.
  */
-export function aneisDaAldeia(a: { raio: number }): number {
-  return Math.max(2, Math.ceil(a.raio / PASSO));
+export function aneisDaAldeia(a: { raio: number; tilesTerritorio?: number }): number {
+  // Os anéis acompanham o **território**, não o raio do nível.
+  //
+  // Desde que a fronteira cresce em forma livre, os dois deixaram de ser a
+  // mesma coisa: uma vila pode dominar três mil tiles com raio nominal de 26.
+  // Enquanto os lotes seguiram o raio, espaçá-los em doze tiles derrubou o
+  // número de casas a ponto de quase ninguém nascer dentro de uma — o
+  // território era enorme e a vila continuava cabendo em nove lotes.
+  const porTerritorio = Math.ceil(Math.sqrt(a.tilesTerritorio ?? 0) / PASSO);
+  return Math.max(2, Math.ceil(a.raio / PASSO), porTerritorio);
 }
 
 /** Lado do lote, em tiles. O que sobra entre lotes vira rua e quintal. */
@@ -50,12 +60,17 @@ const LOTE = 4;
 /**
  * Distância de um lote ao seguinte.
  *
- * Um tile de folga, que é exatamente a faixa livre que `loteServe` já exige em
- * volta de cada obra. Com dois, a malha era tão rala que uma vila de nível 4
- * tinha só treze lotes utilizáveis dentro do próprio território, e a maior
- * parte das obras morria sem lugar para nascer.
+ * Oito tiles de folga entre lotes de quatro. Parece exagero escrito assim, e
+ * não é: comparando com a referência, entre duas casas do WorldBox cabem quatro
+ * a seis tiles de campo aberto, e as nossas saíam praticamente encostadas,
+ * formando um bloco contínuo de telhado que se lia como uma coisa só em vez de
+ * como um povoado.
+ *
+ * Isto só ficou possível quando o território cresceu: numa vila de duzentos
+ * tiles, espaçar assim deixaria lugar para três casas. Se um dia faltar lote de
+ * novo, o caminho é olhar o território antes de reapertar isto aqui.
  */
-const PASSO = LOTE + 1;
+const PASSO = LOTE + 6;
 
 /**
  * Acha o lote livre mais próximo da praça onde a construção caiba.
@@ -108,8 +123,17 @@ export function acharLote(mundo: Mundo, a: Aldeia, tipo: number): number {
       for (let d = 0; d < MEIOS.length; d += 2) {
         const x = a.x + cx * PASSO + MEIOS[d] - (largura >> 1);
         const y = a.y + cy * PASSO + MEIOS[d + 1] - (profundidade >> 1);
-        if (!loteServe(mundo, a, x, y, largura, profundidade, tipo)) continue;
-        return g.idx(x, y);
+        if (loteServe(mundo, a, x, y, largura, profundidade, tipo)) return g.idx(x, y);
+        // A célula da malha vale **uma** obra. Se a posição principal foi
+        // recusada porque já tem prédio ali, a célula está usada e acabou; as
+        // posições de meio passo só entram quando o que barrou foi o terreno.
+        //
+        // Sem esta linha as quatro posições eram sempre tentadas, cada célula
+        // de dez tiles recebia quatro casas e o espaçamento real caía de dez
+        // para cinco — exatamente o bloco contínuo de telhado que o `PASSO`
+        // largo existe para evitar. A malha dizia uma coisa e o mundo saía
+        // com o dobro da densidade em cada eixo.
+        if (_recusouPorObra) break;
       }
     }
   }
@@ -131,6 +155,15 @@ export function acharLote(mundo: Mundo, a: Aldeia, tipo: number): number {
  * quarteirão continua alinhado.
  */
 const MEIOS = [0, 0, 3, 3, 3, 0, 0, 3];
+
+/**
+ * Por que `loteServe` recusou a última posição: obra vizinha, ou terreno?
+ *
+ * É uma variável de módulo, e não um retorno, para não alocar objeto dentro do
+ * laço de escolha de lote — mesmo motivo dos `_eu`/`_espEu` da IA. Só tem
+ * sentido no instante seguinte à chamada.
+ */
+let _recusouPorObra = false;
 
 /**
  * Um lote de lavoura encostado num moinho da aldeia.
@@ -231,7 +264,14 @@ function celulasDoAnel(anel: number): Array<[number, number]> {
   return saida;
 }
 
-function loteServe(
+/**
+ * O lote serve para aquela obra?
+ *
+ * Exportada porque a mão do jogador ergue onde ele clica, e não onde a vila
+ * escolheria — mas as regras têm de ser as mesmas. Ver as ferramentas de obra
+ * em `src/sim/poderesDerivados.ts`.
+ */
+export function loteServe(
   mundo: Mundo,
   a: Aldeia,
   x: number,
@@ -241,6 +281,7 @@ function loteServe(
   tipo: number,
 ): boolean {
   const g = mundo.grid;
+  _recusouPorObra = false;
   if (x < 0 || y < 0 || x + largura > g.largura || y + profundidade > g.altura) return false;
 
   const naRocha = ED_MONTANHA[tipo] === 1;
@@ -273,10 +314,19 @@ function loteServe(
       // entrar na montanha. O resto precisa de chão plano.
       if (g.ehMontanha(i) && !naRocha) return false;
       if (g.fogo[i] > 0) return false;
-      if (g.construcao[i] !== 0 || g.ocupacao[i] !== -1) return false;
+      if (g.construcao[i] !== 0 || g.ocupacao[i] !== -1) {
+        _recusouPorObra = true;
+        return false;
+      }
       if (!naRocha && BIOMA_HABITAVEL[g.bioma[i]] <= 0) return false;
-      // território de outro povo não se ocupa
-      if (g.aldeiaDona[i] !== a.id && g.aldeiaDona[i] !== -1) return false;
+      // A obra sai **dentro do próprio território**, e só.
+      //
+      // Antes bastava não ser de outro povo: terra de ninguém servia. O
+      // resultado era vila que se espalhava para fora do que dominava, e
+      // território deixava de significar alguma coisa — dava no mesmo ter ou
+      // não ter a terra. Agora dominar vem primeiro, construir vem depois, e é
+      // isso que faz expandir a fronteira ser o objetivo que você quer que seja.
+      if (g.aldeiaDona[i] !== a.id) return false;
       // Nada do que está no chão barra a obra: mata se derruba e pedra se
       // arranca, e as duas coisas vão para o estoque da vila (`erguer`). Quando
       // veio de minério barrava, a conta era outra — desde que minério passou a
@@ -300,7 +350,10 @@ function loteServe(
       const by = y + dy;
       if (!g.dentro(bx, by)) continue;
       const i = g.idx(bx, by);
-      if (g.construcao[i] !== 0 || g.ocupacao[i] !== -1) return false;
+      if (g.construcao[i] !== 0 || g.ocupacao[i] !== -1) {
+        _recusouPorObra = true;
+        return false;
+      }
     }
   }
   return true;
@@ -446,7 +499,13 @@ export function semearEmVolta(mundo: Mundo, a: Aldeia, ancora: number, raio: num
  * território para a aldeia. Não cobra material — quem decide o gasto é
  * `civilizacao.ts`.
  */
-export function erguer(mundo: Mundo, a: Aldeia, ancora: number, tipo: number): void {
+export function erguer(
+  mundo: Mundo,
+  a: Aldeia,
+  ancora: number,
+  tipo: number,
+  material = 0,
+): void {
   const g = mundo.grid;
   const largura = ED_OCUPA[tipo * 2];
   const profundidade = ED_OCUPA[tipo * 2 + 1];
@@ -454,6 +513,11 @@ export function erguer(mundo: Mundo, a: Aldeia, ancora: number, tipo: number): v
   const ay = (ancora / g.largura) | 0;
 
   g.construcao[ancora] = tipo + 1;
+  // De que é feito e quem fez. Fica gravado no tile e não é recalculado nunca:
+  // a casa de palha que a tribo levantou continua de palha depois de o reino
+  // descobrir a cantaria, e é essa mistura que faz a vila contar a própria
+  // história no mapa.
+  g.acabamento[ancora] = empacotarAcabamento(material, a.especie);
   g.ocupar(ancora, largura, profundidade);
   for (let dy = 0; dy < profundidade; dy++) {
     for (let dx = 0; dx < largura; dx++) {

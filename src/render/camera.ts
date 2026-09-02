@@ -32,15 +32,30 @@ export class Camera {
   redimensionar(largura: number, altura: number): void {
     this.larguraTela = largura;
     this.alturaTela = altura;
+      // enquanto o jogador não escolheu o próprio enquadramento, a janela manda
+    if (this.enquadrado) this.enquadrarMundo();
   }
 
   /** Ajusta o zoom para o mundo inteiro caber na tela. */
+  /**
+   * A câmera ainda mostra o mundo inteiro, sem o jogador ter mexido nela?
+   *
+   * Enquanto for verdade, todo redimensionamento da janela reenquadra. Sem
+   * isso, o enquadramento feito na abertura ficava valendo para sempre: abrir o
+   * jogo numa janela pequena e depois maximizar deixava o mundo desenhado no
+   * tamanho antigo, com um quarto da tela em preto em volta. Ao primeiro zoom
+   * ou arrasto isto vira falso e não volta sozinho — quem escolheu o
+   * enquadramento passa a ser o jogador.
+   */
+  private enquadrado = true;
+
   enquadrarMundo(): void {
     const ex = this.larguraTela / this.larguraMundo;
     const ey = this.alturaTela / this.alturaMundo;
     this.escala = Math.max(this.escalaMin, Math.min(ex, ey));
     this.x = this.larguraMundo / 2;
     this.y = this.alturaMundo / 2;
+    this.enquadrado = true;
   }
 
   telaParaMundoX(px: number): number {
@@ -63,6 +78,7 @@ export class Camera {
   zoom(fator: number, focoTelaX: number, focoTelaY: number): void {
     const antesX = this.telaParaMundoX(focoTelaX);
     const antesY = this.telaParaMundoY(focoTelaY);
+    this.enquadrado = false;
     this.escala = Math.max(this.escalaMin, Math.min(this.escalaMax, this.escala * fator));
     const depoisX = this.telaParaMundoX(focoTelaX);
     const depoisY = this.telaParaMundoY(focoTelaY);
@@ -73,6 +89,7 @@ export class Camera {
 
   /** Move em pixels de tela. */
   arrastar(dxTela: number, dyTela: number): void {
+    this.enquadrado = false;
     this.x -= dxTela / this.escala;
     this.y -= dyTela / this.escala;
     this.prender();

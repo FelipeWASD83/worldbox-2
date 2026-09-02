@@ -148,6 +148,120 @@ Lago **afunda o terreno** junto de pintar o bioma. No motor, água é altitude
 abaixo do nível do mar (`Grid.ehAgua`); lago que só troca o bioma continua
 chão firme para o resto do jogo.
 
+### A interface mora toda na barra de baixo
+
+O mapa ocupa a tela inteira; não há painel lateral nenhum. Tudo — ferramentas,
+inspetor, ordens, estatísticas, crônica e ajustes — vive numa barra sempre
+visível embaixo, dividida em abas. É o arranjo do WorldBox, e a razão é que num
+jogo em que se fica olhando o mundo cada painel encostado na lateral é um pedaço
+de mundo que se deixa de ver.
+
+Três coisas que essa mudança ensinou, e que valem para qualquer mexida no
+layout:
+
+- **A barra tem altura fixa, não `auto`.** Com `auto`, uma linha de texto a mais
+  na dica da ferramenta encolhia o mapa; encolher o mapa redimensiona o canvas,
+  o que dispara outro cálculo de layout, e o navegador acusava laço de
+  `ResizeObserver` — que o jogo mostrava como erro fatal.
+- **`ajustarTela` só mexe no buffer do canvas.** Escrever `tela.style.width` de
+  dentro do `ResizeObserver` fechava o mesmo laço. O tamanho em tela vem do CSS.
+- **A câmera reenquadra sozinha enquanto o jogador não mexeu nela**
+  (`Camera.enquadrado`). Sem isso, o enquadramento da abertura valia para
+  sempre: abrir numa janela pequena e maximizar deixava um quarto da tela em
+  preto em volta do mundo.
+
+### Barcos e portos
+
+`src/sim/barcos.ts`. Barco **não é criatura**, e a escolha é deliberada: o pool
+de criaturas daria posição, movimento e save de graça, mas viraria uma espécie
+que não come, não envelhece e não se reproduz. São poucas dezenas no mundo, então
+é uma lista em `Mundo.barcos`, como as bombas de lava e as nuvens.
+
+O porto é a única obra que **avança sobre a água** (`Edificio.naAgua`): enquanto
+precisou de terra firme nos doze tiles do lote, só duas de vinte vilas costeiras
+achavam onde erguê-lo, e o mundo terminava com um porto só. Um cais é meio terra,
+meio água — e é isso que o faz caber numa costa recortada.
+
+Não há busca de caminho no mar, como não há em terra. O que evita casco preso em
+baía é escolher destino só quando **a linha reta até lá é toda navegável**
+(`caminhoLivre`).
+
+### Política: quem manda, e o índice que não se pode guardar
+
+`src/sim/politica.ts`. Cargos são **pessoas concretas** do pool: `Aldeia.governante`
+e `Reino.rei` guardam índice de criatura. Governante é o morador mais rico da
+vila; rei é a casa real enquanto sobrar alguém dela, e a família mais rica quando
+a linhagem acaba.
+
+**A armadilha que isso trouxe, e que vale para qualquer referência futura a uma
+criatura:** índice de criatura guardado fora do pool não pode ser confiado
+sozinho. Quando alguém morre, o slot volta para a lista de livres e o próximo a
+nascer ocupa o mesmo número — quem guardou o índice passa a apontar para outra
+pessoa, **viva e do mesmo reino**, sem nenhum sinal de que trocou. Foi assim que
+um reino apareceu governado por um recém-nascido sem família.
+
+Por isso existe `Criaturas.geracao`: um contador que sobe a cada reciclagem do
+slot. Quem guarda referência guarda o par (índice, geração) — `Reino.reiGer`,
+`Aldeia.governanteGer` — e confere com `mundo.mesmaPessoa(i, ger)`. **Toda
+mecânica nova que apontar para uma criatura tem de fazer o mesmo.**
+
+O território ficou grande de propósito na mesma rodada: o raio por nível dobrou
+e a distância entre aldeias subiu junto. Os dois andam amarrados — raio grande
+com distância curta faz a colônia nascer dentro do território da mãe e travar no
+nível 1 para sempre.
+
+### O mapa político tem a resolução de um bloco
+
+`CamadaTiles.desenharTerritorio`. O território é pintado em **blocos de 6×6
+tiles** (`LADO_BLOCO`), e o bloco pertence ao reino com mais tiles dentro dele.
+
+`LADO_BLOCO` é **separado** de `LADO_PEDACO`, o lado do pedaço de chão em cache.
+Já foram o mesmo número, e o resultado eram degraus de dezesseis tiles: uma vila
+inteira cabia num quadrado só e a divisa parecia um tabuleiro. Um é tamanho de
+cache de desenho e tem motivo de performance para ser 16; o outro é resolução de
+fronteira e tem motivo estético para ser pequeno. A divisa é o contorno dos blocos, e só aparece
+onde o vizinho é de outro dono.
+
+A perda de precisão é o ponto: fronteira é uma linha grossa num mapa, não o
+cadastro de cada metro quadrado. Tingir tile a tile dava um recorte serrilhado
+que dizia mais sobre o algoritmo de expansão do que sobre política.
+
+Fica **fora do cache de chão** porque depende dos blocos vizinhos, e um pedaço
+do cache não sabe nada sobre o vizinho. O dono de cada bloco é recontado a cada
+`INTERVALO_BLOCOS` ticks, não a cada quadro: a fronteira anda devagar.
+
+### O território cresce pela borda, e a borda é uma fila
+
+`Aldeia.franja` guarda os tiles da fronteira esperando serem tomados, e
+`expandirTerritorio` come um punhado dela por passada. É o que faz a forma do
+território ser a que a geografia permite em vez de um disco em volta da praça.
+A retirada é de posição sorteada, não da ponta: tirando sempre do fim, a vila
+crescia em faixa reta, porque a fila é preenchida em ordem de vizinhança.
+
+**Consequência que já custou uma correção:** com forma livre, nenhuma conta
+pode supor que o território de uma vila cabe num quadrado em volta dela, nem que
+é contíguo — uma vizinha mais forte corta a mancha ao meio. É por isso que
+`destruirAldeia` varre o mapa inteiro em vez de um quadrado.
+
+### A vegetação segue a água
+
+`fatorDeAgua`, em `src/sim/geracao.ts`. Árvore e arbusto não se distribuem pelo
+clima médio do bioma: eles se amontoam onde há água de superfície. O fator
+multiplica a densidade de **planta** (madeira e comida — minério não, que está
+enterrado desde antes de haver rio) e vale tanto na geração do mundo quanto na
+rebrota, para o mapa não mudar de regra depois que a partida começa.
+
+Rio e lago pesam muito mais que o mar: água salgada não rega nada.
+
+**A calibragem é parte do desenho, não um detalhe.** A intenção é redistribuir
+vegetação, não criar vegetação — a média do fator sobre a terra firme tem de
+ficar por volta de 1. Na primeira tentativa ela saiu em 1,7, a cobertura de
+planta do mundo pulou de 10% para 17,5% do chão, encostou no teto de
+`BAL.tetoDoChao.madeira` e **desligou a rebrota inteira**: o mundo ficava cheio
+de mata e incapaz de repor a que fosse derrubada. Quem mexer nesses números mede
+os dois lados — a cobertura total e a taxa média de rebrota — e não só o
+contraste na tela.
+
 ### Recursos: camada, não entidade
 
 Árvore, arbusto, pedra e veio de minério moram em `grid.recurso` e
@@ -206,6 +320,213 @@ o sprite, a barra de ferramentas e as estatísticas se ajustam sozinhos.
 tipado. Sistemas anunciam o que aconteceu e a interface, a crônica e as
 estatísticas escutam. É por onde mecânicas futuras vão se pendurar sem tocar nas
 existentes.
+
+### Névoa diplomática: reino nenhum nasce sabendo dos outros
+
+`Reino.conhecidos` e `src/sim/contato.ts`. **Nada de diplomacia acontece fora
+desse conjunto** — nem relação, nem comércio, nem guerra, nem atrito de
+fronteira. `mundo.mudarRelacao` desiste em silêncio para um par que não se
+conhece, e é essa guarda que impede a névoa de virar enfeite de interface.
+
+O conhecimento anda **dentro de uma pessoa**. Alguém esbarra num estrangeiro ou
+pisa em chão com dono, guarda a novidade em `Criaturas.noticia`, e enquanto ela
+estiver ali é a única cópia que existe no mundo: se a pessoa morrer no caminho,
+o encontro não deixa marca. Chegando viva a menos de `BAL.distanciaDoRelato` da
+própria praça, conta a quem manda ali e só então os dois reinos passam a existir
+um para o outro. Aliados também trocam o que sabem, uma vez por avaliação de
+diplomacia — é a única forma de conhecimento que atravessa o mapa sem alguém
+andar até lá.
+
+Efeito colateral que é o ponto: um reino cercado de montanha demora décadas para
+descobrir o vizinho. A geografia passa a decidir a política.
+
+### Guerra precisa de motivo, e paz precisa de desgaste
+
+`motivosDeGuerra` em `src/sim/diplomacia.ts`. Cada par de reinos tem uma lista de
+motivos com peso medido do estado do mundo naquele instante — fronteira que se
+toca, ódio antigo entre os povos (`ODIO_POVOS`), rancor acumulado, terra que
+falta de um lado e sobra do outro, fome, fraqueza do vizinho, aliado apanhando.
+Guerra estoura quando a soma passa de `BAL.limiarCasusBelli`, e o motivo mais
+pesado vai no evento `reino:guerra` e daí para a crônica: dá para ler no
+histórico **por que** cada guerra começou.
+
+**A paz não é o espelho disso, e essa foi a lição medida.** A primeira versão
+exigia que os motivos esfriassem para a guerra acabar, e o mundo travou em guerra
+permanente: os motivos que sustentam uma guerra *crescem* enquanto ela dura — a
+fronteira continua se tocando, os mortos viram rancor, a relação fica presa em
+-80. Quatro reinos, quatro guerras simultâneas, nenhuma terminando a não ser por
+extermínio, e a economia parada porque um terço de cada vila estava de armas na
+mão. Quem encerra uma guerra é o **desgaste** (`BAL.ticksAteCansarDaGuerra`),
+com os motivos esfriando apenas apressando a trégua.
+
+Duas guardas acompanham isso e existem pelo mesmo motivo: `BAL.tregua`, um tempo
+mínimo entre uma guerra e a seguinte com o mesmo reino — sem ele a mesma guerra
+recomeçava na avaliação seguinte à paz —, e `BAL.pesoDeFrenteAberta`, que
+encarece abrir um segundo front.
+
+`Reino.rancor` é separado de `Reino.relacoes` de propósito: relação oscila, mágoa
+não. Ela entra por morte em combate, por chão tomado e por traição de aliança, e
+só desce com o tempo (`BAL.esquecimentoDeRancor`).
+
+### Clã, lealdade e rebelião
+
+`src/sim/cultura.ts`. Cada pessoa pertence a um clã (`Criaturas.cla`), cada clã
+é um objeto com quatro valores de 0 a 1 (`Mundo.clas`), e esses valores puxam
+comportamento de verdade: `marcialidade` inclina quantos moradores viram
+soldado, `ganancia` e `submissao` decidem quanto o imposto dói, `fechamento`
+decide o quanto incomoda ser governado por gente de outro clã.
+
+A lealdade de cada um (`Criaturas.fidelidade`) caminha devagar para um alvo
+calculado do que ele vive — fartura da vila, fome no estômago, clã de quem
+manda, guerra em que o reino meteu todo mundo. Quando a média de uma vila
+desaba, ela se separa levando o território e nasce em guerra com o reino de
+origem.
+
+**É a única fonte de dois reinos vizinhos da mesma espécie no jogo**, e por isso
+a única fonte de aliança: entre espécies diferentes o ódio de povo trava a
+relação antes de ela chegar aos 45 que uma aliança exige.
+
+Três lições medidas ficam aqui:
+
+- **A varredura por vila é O(vilas × criaturas).** A primeira versão fazia um
+  laço por vila varrendo o pool atrás dos moradores dela, o que num mundo grande
+  são mais de um milhão de iterações por avaliação. `atualizarLealdade` calcula
+  o que vale para a vila numa tabela indexada por id de aldeia e varre o pool
+  **uma vez**. Qualquer conta nova por vila que precise olhar moradores tem de
+  nascer assim.
+- **Clã não pode decidir a economia da vila.** Com a marcialidade mexendo na
+  fatia de soldados de metade ao dobro (`BAL.pesoDoClaNoExercito` valendo 1), a
+  guerra tirava até metade da vila do trabalho, as aldeias paravam de construir
+  casa e o crescimento por nascimento em casa caía abaixo do crescimento por
+  imigração. O peso é 0,5: o clã inclina a balança, não a vira.
+- **Id de reino não é reaproveitado** (ver `criarReino`). Aldeia recicla id e
+  criatura recicla slot; reino não, porque o número dele fica guardado em
+  `grid.territorio` e em `criaturas.noticia`, onde não há como conferir se ainda
+  é o mesmo reino.
+
+### Quem funda vila ou reino empossa o chefe na hora
+
+`empossarChefes`, em `src/sim/politica.ts`. O sistema de política roda a cada
+`BAL.intervaloPolitica` ticks, e enquanto ele não roda uma vila recém-fundada
+não tem governante e um reino recém-fundado não tem rei — ninguém recolhe
+imposto e qualquer conta que suponha "toda vila viva tem quem mande nela"
+encontra exceção. Colônia, desembarque de colonos, refundação de um povo
+varrido, rebelião e a mão do jogador chamam `empossarChefes` logo depois de
+criar.
+
+Na mesma correção, a ordem dentro de `sistemaPolitica` foi invertida: **a coroa
+vem antes dos governantes.** Rei novo leva uma fatia do tesouro ao assumir, o
+que costuma fazer dele o mais rico da vila onde mora; com os governantes
+escolhidos primeiro, aquele dinheiro só entrava na conta na passada seguinte e
+por até cento e vinte ticks a vila do rei tinha um governante mais pobre que ele.
+
+### Tecnologia: o que a civilização sabe, e do que ela constrói
+
+`src/dados/tecnologias.ts` e `src/sim/conhecimento.ts`. Um reino nasce sabendo
+duas coisas — fazer fogo e lascar pedra —, acumula **conhecimento** em pontos e
+gasta esses pontos em descobertas, sempre na mais barata que já pode alcançar.
+Cada descoberta abre construção, equipamento ou **material de obra**.
+
+Três coisas mudaram de natureza com isso:
+
+- **A era virou consequência.** Era calculada de população e território e não
+  decidia nada; agora é a era da tecnologia mais avançada que o reino domina.
+- **Os marcos passaram a servir para alguma coisa.** Biblioteca, prefeitura,
+  templo e taverna estavam de pé no mapa sem função desde que existem — era a
+  pendência 3 do roteiro. Agora são a fonte de conhecimento do reino.
+- **`grid.acabamento` é uma camada nova**, um byte por tile, com o material de
+  obra nos três bits de baixo e a espécie de quem ergueu nos cinco de cima. É
+  gravado uma vez, na hora de erguer, e **nunca recalculado**: a casa de palha
+  que a tribo levantou continua de palha depois da cantaria, e é essa mistura
+  que faz a vila contar a própria história no mapa.
+
+O material multiplica abrigo, moradia e resistência (`MAT_FATOR`) e escala o
+custo. **A faixa é moderada de propósito, entre 0,7 e 1,35.** A primeira versão
+ia de 0,55 a 1,45 e o efeito medido foi outro: como o mundo passa a maior parte
+da partida em palha, uma casa de barro que abrigava metade do normal cortou a
+população civilizada pela metade junto — dezoito vilas travadas no nível 1,
+nenhuma chegando a moinho ou mercado. A diferença entre um material e o seguinte
+tem de ser sentida; não pode decidir sozinha se a civilização existe.
+
+**Quem se rebela leva o que sabia.** São as mesmas pessoas: o pedreiro que
+assentava pedra na segunda continua sabendo assentar pedra na terça, com outra
+bandeira em cima. Sem isso o mapa enchia de reinos tribais que nunca tinham
+sido tribais.
+
+**Nos testes existe `ensinarTudo(m)`.** Um teste sobre porto, moinho ou casa não
+está testando a *descoberta* deles — sem o atalho, ele passaria a medir só
+quanto tempo a tecnologia demora, que é assunto do teste 18.
+
+### Genética: traços e mestiçagem
+
+`src/dados/tracos.ts` e `src/sim/genetica.ts`. Duas coisas, e são a mesma ideia
+por dois lados: a **espécie** diz de que povo alguém é, os **traços** dizem quem
+ele é dentro daquele povo.
+
+**Traço é um bit** em `Criaturas.tracos`, no idioma de `Criaturas.marcas` —
+trinta e dois cabem num `Uint32Array`, quatro bytes por criatura, nenhuma
+alocação. O que um traço faz são **multiplicadores sobre campos que já
+existiam**: forte multiplica o dano que o combate já calculava, sábio multiplica
+o conhecimento que o reino já acumulava. Nenhum traço abre mecânica nova, e é
+isso que garante que traço novo custe uma linha de tabela e não código. Só os
+inteligentes têm traço, por decisão do Felipe.
+
+`fator(mascara, campo)` sai na primeira linha quando a máscara é zero — o caso
+de todo bicho do mapa —, e por isso o sistema inteiro custa 6% de tick.
+
+**`ESP_VIDA` deixou de ser o teto de vida.** Quem cura, compara ou mede "quanto
+falta" tem de passar por `vidaMaxima(c, i)`, senão o forte fica curando até um
+teto que não é o dele.
+
+**Mestiço é espécie registrada**, gerada no carregamento a partir dos pares de
+povos civilizados — seis entradas. Descartei guardar atributos por criatura: as
+tabelas planas `ESP_*` que os laços quentes leem são indexadas por espécie, e
+dar atributo próprio a cada indivíduo custaria uma dúzia de arrays a mais em
+cento e trinta mil criaturas.
+
+Quem cruza com quem sai de `ODIO_POVOS`, a mesma tabela que decide guerra —
+`BAL.odioParaCruzar`. Duas armadilhas que custaram correção:
+
+- **Mestiço tem de poder cruzar com os pais.** A primeira versão exigia um
+  mestiço registrado para aquele par, e um meio-elfo não podia ter filho com
+  ninguém a não ser outro meio-elfo: a primeira geração virava beco sem saída.
+- **Vila é fundada com um povo só**, colônia herda o povo da mãe e a imigração
+  de fora trazia mais do mesmo. Sem `povoQueChega` (em `civilizacao.ts`), que
+  deixa a imigração trazer gente de um povo tolerado e conhecido, **mestiço
+  nenhum jamais nasceria** — é a única porta pela qual dois povos passam a morar
+  juntos.
+
+`criatura:mesticou` só é emitido quando o filho é ele mesmo um povo mestiço.
+Filho puro de um casal com um mestiço dentro é a linhagem voltando para um lado,
+e anunciar isso enchia a crônica de "nasceu o primeiro anão".
+
+### As ferramentas do jogador, em três arquivos
+
+`poderesBase.ts` tem a interface `Poder`, o registro e os ajudantes (`porTile`,
+`porCriatura`, `pintar`, `refazerBioma`, `reinosNaArea`). `poderes.ts` registra
+as escritas à mão. `poderesDerivados.ts` registra as **famílias que saem prontas
+dos registros do jogo** — um pincel por bioma, um plantio por recurso, uma obra
+por construção, um dom por traço e uma revelação por tecnologia.
+
+A divisão em três existe para evitar um ciclo: os derivados precisam dos
+ajudantes, e `poderes.ts` precisa chamar `registrarDerivados()` no fim. Com os
+ajudantes num terceiro módulo, ninguém importa ninguém em círculo.
+
+**Quase metade das ferramentas não é escrita à mão**, e essa é a ideia: registrar
+um bioma passa a registrar, de graça, o pincel daquele bioma; registrar um traço
+passa a dar ao jogador o poder de concedê-lo. Conteúdo novo não deveria exigir
+código de interface novo.
+
+`CATEGORIAS` é a lista de abas e a interface se monta a partir dela — aba nova é
+uma entrada naquele array, uma `<section>` no HTML e um `.aba-btn`. **Não há uma
+segunda lista de abas em `main.ts`**; havia, e duas listas para manter em dia é
+uma esquecida.
+
+O teste 20 aplica **todas** as ferramentas em três pontos de um mundo vivo e
+confere que nada estoura, que o mundo continua andando, que ninguém foi parar
+fora do mapa, que não sobrou tile preso a construção inexistente e que o
+resultado ainda salva. Com quase duzentos caminhos, é a única forma de saber que
+nenhum deles quebra num caso que o desenvolvimento não visitou.
 
 ### Custo: onde ele está e como é segurado
 
@@ -410,6 +731,43 @@ quem as matou, que é a única forma honesta de saber se o ajuste ajudou.
   propósito: quem vai minerar sobe, quem está lá em cima desce, e quem foge não
   escolhe o caminho. Medido: a serra é 31% do chão e só 3% dos bichos estão
   nela.
+- **Barco de guerra que nunca voltava para casa.** Cada perna de patrulha
+  escolhia a seguinte, e como só se embarca colono no porto, a frota rondava
+  para sempre e nenhuma colônia de além-mar era fundada — sete navios
+  patrulhando, zero zarpadas em quarenta mil ticks. Toda ronda precisa de fim
+  (`Barco.pernas`).
+- **Diagnóstico em cima do índice errado.** Contei "portos órfãos" no mapa e
+  escrevi uma regra inteira de "prédio sem dono vira ruína" para resolver — os
+  tiles que eu contava eram **vulcões**, e o problema não existia. A regra foi
+  removida. Antes de criar mecânica para explicar uma medição, confira que a
+  medição mede o que você acha que mede: `mundo.nomeEdificio(construcao[i])`
+  custa uma linha.
+- **Território herdado de uma aldeia morta.** `destruirAldeia` limpava o chão
+  varrendo um quadrado em volta da praça. Território em forma livre não cabe num
+  quadrado e nem sempre é contíguo, então sobrava chão marcado no nome de uma
+  vila que já não existia — e como `criarAldeia` **reaproveita o id**, a vila
+  seguinte nascia dona de uma herança de terra do outro lado do mapa, com o
+  contador zerado. É a armadilha do slot reciclado um andar acima: sempre que
+  algo é reaproveitado por id, o que o dono anterior deixou tem de sumir por
+  completo, não "quase".
+- **A malha dizia dez e o mundo saía com cinco.** Cada célula da trama de lotes
+  tem uma posição principal e três de meio passo, que existem para salvar o lote
+  recusado pelo **terreno** (água, rocha, chão de outro povo). Elas eram tentadas
+  também quando a recusa era por **já ter prédio ali**, então cada célula de dez
+  tiles recebia quatro obras e o espaçamento real caía pela metade em cada eixo —
+  exatamente o bloco contínuo de telhado que o passo largo existe para evitar.
+  Hoje `loteServe` diz por que recusou (`_recusouPorObra`) e a célula vale uma
+  obra.
+- **Cargo herdado por um bebê.** Ver a seção de política acima: `Reino.rei`
+  guardava só o índice, o slot do rei morto era reaproveitado e o sistema
+  continuava achando o cargo válido porque aquele slot estava vivo. A correção
+  é estrutural (`Criaturas.geracao` + `mesmaPessoa`), não um remendo — e vale
+  para toda referência a criatura guardada fora do pool.
+- **Território pequeno não gera expansão, gera confete.** O raio curto vinha do
+  medo de "vila grande demais tira o motivo de colonizar". Medindo, o efeito era
+  o oposto: a vila enchia o território quase na fundação e o reino saía
+  pipocando colônia, terminando com cinquenta povoados de duzentos tiles. E
+  raio e distância entre aldeias têm de subir **juntos**.
 - **Anúncio saindo antes de a plateia chegar.** Tanto `mundo:gerado` quanto
   `mundo:carregado` eram emitidos antes de a crônica se religar ao mundo novo.
   Quem anuncia é o `Jogo`, depois de trocar o mundo.
@@ -426,7 +784,8 @@ Medido em 01/09/2026, mapa médio (384×216):
   (`Mundo.tetoPorEspecie`) é o que define isso, e é o que o controle de "bichos"
   na criação do mundo regula. O limite de vizinhança sozinho não segura
   população — ele só espalha.
-- 32 ferramentas, 20 tipos de construção, 15 recursos, 10 equipamentos,
+- 188 ferramentas em oito abas, 21 tipos de construção, 19 tecnologias,
+  19 traços, 15 recursos, 10 equipamentos,
   25 biomas, 20 espécies, 8 tamanhos de mapa (até 2800×1600, teto de 130 mil
   criaturas vivas — o planeta inteiro gera em 1,6 s).
 - Rede de água doce por acumulação de fluxo: ~2% do chão em rio, largura de 1
@@ -449,10 +808,41 @@ Medido em 01/09/2026, mapa médio (384×216):
   povos inteligentes (`src/sim/moradia.ts`).
 - Cada vila tem teto de território por nível; encher o teto é o que empurra o
   reino a fundar vila nova (`limiteDeTerritorio`, `BAL.chanceColonizarLotada`).
+- Névoa diplomática de pé: os reinos começam sem saber uns dos outros e se
+  descobrem por mensageiro. Num mapa médio, quatro reinos levam de vinte a
+  setenta anos de jogo para fechar dois ou três dos seis pares possíveis — e
+  alguns nunca se encontram.
+- Guerra com casus belli: em trinta mil ticks, ~8 guerras declaradas e ~7 pazes
+  assinadas, com zero a duas ativas ao mesmo tempo, cada uma com o motivo
+  registrado na crônica.
+- Tecnologia de pé: num mapa médio os reinos entram na era das aldeias por
+  volta do tick 4.200, na era de reino por volta de 18.000 e na imperial por
+  volta de 25.000, e quarenta mil ticks bastam para os dezenove tipos de
+  construção aparecerem no mundo — inclusive biblioteca, mercado, templo e
+  quartel, que dependem das descobertas mais caras.
+- Genética de pé: num mapa médio, cerca de 70% dos inteligentes carrega pelo
+  menos um traço, os dezenove aparecem, e o imortal sai um a cada poucas
+  centenas. Mestiço nasce sozinho onde dois povos tolerados convivem — de três a
+  quarenta nascimentos em trinta mil ticks, conforme quem sobreviveu e quem
+  fez fronteira com quem.
+- Clãs e rebelião de pé: um mundo médio termina quarenta mil ticks com 150 a 250
+  clãs, 3,7 clãs por vila em média, de três a seis rebeliões e seis a oito
+  reinos vivos vindos dos quatro iniciais. Imposto brutal num reino de onze
+  vilas o partiu em três em seis mil ticks — a alavanca funciona.
+- Território em forma livre, crescendo pela fronteira, desenhado em blocos de
+  6×6 na cor do reino em qualquer zoom. De longe a tela nomeia os **reinos**
+  (povo e população); de perto, as **vilas**.
 - Vulcões cospem bombas de lava com altura própria (`src/sim/vulcoes.ts`); onde
   caem, o chão vira lava e a mata em volta pega fogo.
 - Comércio, alianças, equipamento e ordens do jogador conferidos rodando
   (`npm run sim` relata negócios fechados, alianças e quem está armado com quê).
+- Interface toda na barra de baixo, em abas; o mapa ocupa a tela inteira.
+- Cada civilizado tem riqueza, família, clã e lealdade. Vilas têm governante (o
+  mais rico) e reinos têm rei (a casa real, com sucessão por linhagem e por
+  fortuna quando a casa acaba). O imposto é regulado pelo jogador.
+- Portos e frota: pesqueiros trazem comida do mar e navios de combate fundam
+  colônia do outro lado dele (medido em arquipélago: 8 portos, 23 barcos,
+  6 colônias por mar em 40 mil ticks).
 
 **Aberto / próximo:**
 - Não há busca de caminho: a criatura anda em linha reta e desliza no obstáculo.
@@ -462,10 +852,8 @@ Medido em 01/09/2026, mapa médio (384×216):
   direita).
 - O equilíbrio entre os quatro povos ainda varia bastante de semente para
   semente: é comum um povo dominar e outro sumir (a refundação traz de volta).
-- Estações do ano, clima e catástrofes naturais automáticas não existem — só os
-  desastres que o jogador provoca.
-- A armadura não aparece no desenho (só arma e escudo): num boneco de 16 pixels
-  ela ficaria confusa. É lida no inspetor e sentida no combate.
+- Estações do ano não existem. **Clima existe**: nuvens atravessam o mundo com o
+  vento, chovem (apagando incêndio) e nevam onde faz frio (`src/sim/clima.ts`).
 - Não há conhecimento nem tecnologia: `Reino.era` sobe com a população e ainda
   só aparece na crônica. É o gancho pronto para eras tecnológicas.
 - O comércio usa preço fixo (`VALOR_MATERIAL`); oferta e procura ainda não mexem

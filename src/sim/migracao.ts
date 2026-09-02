@@ -1,10 +1,11 @@
 import type { Sistema } from '../core/sistemas.js';
 import type { Mundo } from '../core/mundo.js';
 import { B, biomas } from '../dados/biomas.js';
-import { ESPECIES_SELVAGENS, ESPECIES_CIVILIZADAS, especies } from '../dados/especies.js';
+import { ESPECIES_SELVAGENS, ESPECIES_FUNDADORAS, especies } from '../dados/especies.js';
 import { nomeDeAldeia, nomeDeReino } from '../dados/nomes.js';
 import { BIOMA_HABITAVEL } from '../dados/biomas.js';
 import { BAL } from './balanco.js';
+import { empossarChefes } from './politica.js';
 
 /**
  * Migração: repõe espécies que ficaram à beira do fim.
@@ -73,7 +74,7 @@ function refundarPovos(mundo: Mundo): void {
   const contagem = mundo.estatisticas.porEspecie;
   const g = mundo.grid;
 
-  for (const idx of ESPECIES_CIVILIZADAS) {
+  for (const idx of ESPECIES_FUNDADORAS) {
     if (contagem[idx] > 0) continue;
     if (!mundo.rng.chance(BAL.chanceRefundacao)) continue;
 
@@ -105,6 +106,14 @@ function refundarPovos(mundo: Mundo): void {
     const reino = mundo.criarReino(idx, nomeDeReino(mundo.rng, def.id), def.povo?.corReino ?? 0x999999);
     const aldeia = mundo.criarAldeia(reino.id, idx, x, y, nomeDeAldeia(mundo.rng, def.id));
     reino.capital = aldeia.id;
+    // Um povo que volta a se estabelecer nasce com o mesmo que os primeiros
+    // reinos do mundo têm: uma casa real, uma casa rival para disputar com ela,
+    // e um clã. Sem isso a coroa não teria linhagem para seguir e o reino
+    // nasceria politicamente vazio.
+    const casaReal = mundo.novaFamilia();
+    const casaRival = mundo.novaFamilia();
+    const cla = mundo.criarCla(idx).id;
+    reino.casaReal = casaReal;
     for (let k = 0; k < 9; k++) {
       const c = mundo.nascer(
         idx,
@@ -115,8 +124,12 @@ function refundarPovos(mundo: Mundo): void {
       if (c < 0) break;
       mundo.criaturas.aldeia[c] = aldeia.id;
       mundo.criaturas.reino[c] = reino.id;
+      mundo.criaturas.familia[c] = k < 3 ? casaReal : casaRival;
+      mundo.criaturas.cla[c] = cla;
+      mundo.criaturas.riqueza[c] = k < 3 ? mundo.rng.entre(18, 30) : mundo.rng.entre(2, 10);
       aldeia.populacao++;
     }
+    empossarChefes(mundo, aldeia);
     mundo.eventos.emitir('especie:migrou', { especie: idx, x, y, quantos: aldeia.populacao });
   }
 }

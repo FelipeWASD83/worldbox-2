@@ -9,7 +9,8 @@
 import { Mundo, TAMANHOS } from '../src/core/mundo.js';
 import { montarPipeline } from '../src/sim/index.js';
 import { gerarTerreno, povoar } from '../src/sim/geracao.js';
-import { especies } from '../src/dados/especies.js';
+import { especies, ESP_INTELIGENTE } from '../src/dados/especies.js';
+import { TOTAL_TRACOS, tracos as tracosReg } from '../src/dados/tracos.js';
 import { empacotar, desempacotar } from '../src/core/save.js';
 import { BAL } from '../src/sim/balanco.js';
 import { MATERIAIS } from '../src/dados/materiais.js';
@@ -153,6 +154,42 @@ function main(): void {
     console.log('');
     console.log(`negócios fechados: ${mundo.eventos.contagem.get('comercio:feito') ?? 0}`);
     console.log(`alianças firmadas: ${mundo.eventos.contagem.get('reino:alianca') ?? 0}`);
+    // A política em três números. São eles que dizem se a névoa está grossa
+    // demais (poucos contatos), se o casus belli está solto demais (muitas
+    // guerras) e se as guerras terminam (pazes perto do número de guerras).
+    console.log(`primeiros contatos: ${mundo.eventos.contagem.get('reino:conheceu') ?? 0}`);
+    console.log(`guerras declaradas: ${mundo.eventos.contagem.get('reino:guerra') ?? 0}`);
+    console.log(`pazes assinadas: ${mundo.eventos.contagem.get('reino:paz') ?? 0}`);
+    console.log(`rebeliões: ${mundo.eventos.contagem.get('reino:rebeliao') ?? 0}`);
+    console.log(`clãs no mundo: ${mundo.clas.length}`);
+    console.log(`mestiços nascidos: ${mundo.eventos.contagem.get('criatura:mesticou') ?? 0}`);
+
+    // A distribuição de traços é o termômetro da genética: se ela ficar plana,
+    // a seleção não está acontecendo; se um traço sumir, o mundo perdeu
+    // variedade e a mutação está fraca demais.
+    {
+      const c = mundo.criaturas;
+      const conta = new Int32Array(TOTAL_TRACOS);
+      let comTraco = 0;
+      let civis = 0;
+      for (let i = 0; i < c.limite; i++) {
+        if (!c.vivo[i] || ESP_INTELIGENTE[c.especie[i]] === 0) continue;
+        civis++;
+        if (c.tracos[i] === 0) continue;
+        comTraco++;
+        for (let t = 0; t < TOTAL_TRACOS; t++) if (c.tracos[i] & (1 << t)) conta[t]++;
+      }
+      if (civis > 0) {
+        console.log(`
+traços: ${comTraco} de ${civis} inteligentes têm algum`);
+        const linhas = [...conta]
+          .map((n, t) => [tracosReg.porIndice(t).nome, n] as const)
+          .filter(([, n]) => n > 0)
+          .sort((a, b) => b[1] - a[1])
+          .map(([nome, n]) => `${nome} ${n}`);
+        console.log(`  ${linhas.join(' · ')}`);
+      }
+    }
   }
 
   // ------------------------------------------------------------ equipamento

@@ -23,7 +23,14 @@ export interface Recurso extends Definicao {
   readonly porColheita: number;
   /** Quantidade que o tile guarda quando está cheio (0..255). */
   readonly quantidade: number;
-  /** Unidades que voltam por tick. 0 = não volta (minério é finito). */
+  /**
+   * Unidades que voltam por tick. 0 = não volta (minério é finito).
+   *
+   * Números pequenos de propósito: a mata que se refaz depressa tira o peso de
+   * derrubá-la. Foram divididos por quatro em 02/09/2026 — antes, um bosque
+   * colhido estava cheio de novo antes de o lenhador voltar, e desmatar não
+   * tinha consequência nenhuma.
+   */
   readonly recresce: number;
   /**
    * Ids de bioma onde nasce. Vazio significa **em qualquer chão** — é o caso
@@ -75,36 +82,42 @@ recursos.registrarTodos([
   // vira uma mancha verde sem árvore reconhecível dentro dela.
   {
     id: 'arvore', nome: 'árvore', cor: [46, 78, 42], rende: 'madeira', porColheita: 6,
-    quantidade: 60, recresce: 0.006, densidade: 0.17, inflamavel: true,
+    quantidade: 60, recresce: 0.0015, densidade: 0.17, inflamavel: true,
     nivelMinimo: 1, ocupa: [1, 1], sprite: [2.4, 3.4],
     biomas: ['floresta', 'planicie', 'campo_fertil'],
   },
   {
     id: 'arvore_selva', nome: 'árvore da selva', cor: [38, 72, 40], rende: 'madeira', porColheita: 7,
-    quantidade: 70, recresce: 0.007, densidade: 0.19, inflamavel: true,
+    quantidade: 70, recresce: 0.00175, densidade: 0.19, inflamavel: true,
     nivelMinimo: 1, ocupa: [1, 1], sprite: [2.6, 3.4],
     biomas: ['selva', 'mangue'],
   },
   {
     id: 'pinheiro', nome: 'pinheiro', cor: [42, 74, 62], rende: 'madeira', porColheita: 6,
-    quantidade: 55, recresce: 0.005, densidade: 0.16, inflamavel: true,
+    quantidade: 55, recresce: 0.00125, densidade: 0.16, inflamavel: true,
     nivelMinimo: 1, ocupa: [1, 1], sprite: [1.8, 3.3],
     biomas: ['taiga', 'tundra', 'neve'],
   },
   {
     id: 'arvore_pantano', nome: 'árvore do pântano', cor: [52, 72, 50], rende: 'madeira', porColheita: 5,
-    quantidade: 45, recresce: 0.006, densidade: 0.15, inflamavel: true,
+    quantidade: 45, recresce: 0.0015, densidade: 0.15, inflamavel: true,
     nivelMinimo: 1, ocupa: [1, 1], sprite: [1.8, 2.7],
     biomas: ['pantano'],
   },
   {
     id: 'arvore_seca', nome: 'árvore seca', cor: [96, 84, 60], rende: 'madeira', porColheita: 4,
-    quantidade: 30, recresce: 0.002, densidade: 0.05, inflamavel: true,
+    quantidade: 30, recresce: 0.0005, densidade: 0.05, inflamavel: true,
     nivelMinimo: 1, ocupa: [1, 1], sprite: [1.5, 2.1],
     biomas: ['savana', 'terra_rachada', 'cinzas'],
   },
 
   // ----------------------------------------------------------------- frutas
+  // A fruta rebrota **bem mais depressa que a mata**, e isso é deliberado.
+  // Quando as três famílias foram desaceleradas juntas, a comida do mundo foi
+  // junto: oitocentas mortes por fome entre os civilizados em vinte e cinco mil
+  // ticks, e a população caiu para um quarto. Mata e minério demorarem é o que
+  // dá peso a derrubar e a cavar; fruta demorar só mata todo mundo.
+  //
   // Fruta é o que herbívoro come e o que a aldeia colhe antes de ter lavoura,
   // mas moita é objeto no chão como qualquer outro: quando havia uma para cada
   // três árvores, o campo virava um tapete e não sobrava terreno à vista. Hoje
@@ -112,19 +125,19 @@ recursos.registrarTodos([
   // sustenta o herbívoro é o pasto, não a moita.
   {
     id: 'arbusto', nome: 'arbusto de frutas', cor: [122, 62, 74], rende: 'comida', porColheita: 5,
-    quantidade: 28, recresce: 0.02, densidade: 0.13, inflamavel: true,
+    quantidade: 28, recresce: 0.014, densidade: 0.13, inflamavel: true,
     nivelMinimo: 1, ocupa: [1, 1], sprite: [0.9, 0.9],
     biomas: ['planicie', 'floresta', 'selva', 'campo_fertil', 'taiga', 'savana'],
   },
   {
     id: 'palmeira', nome: 'palmeira', cor: [70, 112, 58], rende: 'comida', porColheita: 5,
-    quantidade: 34, recresce: 0.012, densidade: 0.1, inflamavel: true,
+    quantidade: 34, recresce: 0.009, densidade: 0.1, inflamavel: true,
     nivelMinimo: 1, ocupa: [1, 1], sprite: [2.2, 2.8],
     biomas: ['praia', 'oasis'],
   },
   {
     id: 'cacto', nome: 'cacto', cor: [78, 118, 66], rende: 'comida', porColheita: 3,
-    quantidade: 18, recresce: 0.008, densidade: 0.06, inflamavel: false,
+    quantidade: 18, recresce: 0.006, densidade: 0.06, inflamavel: false,
     nivelMinimo: 1, ocupa: [1, 1], sprite: [0.9, 1.4],
     biomas: ['deserto', 'oasis'],
   },

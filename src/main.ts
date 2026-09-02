@@ -1,6 +1,6 @@
 import { Jogo, sementeAleatoria } from './core/jogo.js';
 import { TAMANHOS } from './core/mundo.js';
-import { poderes } from './sim/poderes.js';
+import { CATEGORIAS, poderes } from './sim/poderes.js';
 import { especies } from './dados/especies.js';
 import { Cronica } from './ui/cronica.js';
 import { Inspetor } from './ui/inspetor.js';
@@ -106,7 +106,10 @@ let especieEscolhida = especies.indice('humano');
  * cada grupo cabe numa faixa de duas fileiras.
  */
 function montarFerramentas(): void {
-  for (const categoria of ['terreno', 'vida', 'destruicao', 'reino'] as const) {
+  // A lista de abas sai de `CATEGORIAS`, e não de um array escrito aqui: com
+  // quase duzentas ferramentas, aba nova passou a ser coisa que acontece, e
+  // duas listas para manter em dia seria o mesmo que uma esquecida.
+  for (const categoria of CATEGORIAS) {
     const linha = $(`poderes-${categoria}`);
     linha.replaceChildren();
 

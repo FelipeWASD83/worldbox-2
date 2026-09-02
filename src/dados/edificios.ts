@@ -1,4 +1,66 @@
 import { Registro, type Definicao } from '../core/registro.js';
+import { tecnologias } from './tecnologias.js';
+
+/**
+ * De que uma construção é feita, do mais tosco ao mais bem trabalhado.
+ *
+ * Um povo constrói com o melhor material que **sabe** trabalhar, e o material
+ * decide o quanto o prédio vale: uma casa de palha e barro abriga menos gente e
+ * cai com um empurrão; a mesma casa de pedra lavrada abriga mais e aguenta um
+ * cerco. É o pedido do Felipe em forma de tabela — a civilização que só domina
+ * madeira tem prédios de madeira, e prédios de madeira são piores.
+ *
+ * O índice fica guardado no mapa, em `grid.acabamento`, junto com o povo que
+ * ergueu — os dois juntos escolhem o desenho. Isso quer dizer que a mesma vila
+ * pode ter casa de palha da fundação ao lado de casa de pedra levantada depois
+ * da descoberta, e é assim que se lê a história dela no mapa.
+ */
+export interface MaterialDeObra {
+  readonly id: string;
+  readonly nome: string;
+  /** Multiplica abrigo, moradia e resistência. */
+  readonly fator: number;
+  /** Multiplica o custo declarado do prédio. */
+  readonly custoMadeira: number;
+  readonly custoPedra: number;
+}
+
+export const MATERIAIS_DE_OBRA: readonly MaterialDeObra[] = [
+  { id: 'palha', nome: 'palha e barro', fator: 0.7, custoMadeira: 0.6, custoPedra: 0 },
+  { id: 'madeira', nome: 'madeira', fator: 0.9, custoMadeira: 1, custoPedra: 0.3 },
+  { id: 'pedra', nome: 'pedra', fator: 1.12, custoMadeira: 0.7, custoPedra: 1 },
+  { id: 'lavrada', nome: 'pedra lavrada', fator: 1.35, custoMadeira: 0.7, custoPedra: 1.5 },
+];
+
+// Os fatores foram frouxos de propósito, entre 0,7 e 1,35. A primeira versão ia
+// de 0,55 a 1,45, e o efeito medido foi outro: como o mundo passa a maior parte
+// da partida em palha, uma casa de barro que abrigava metade do normal cortou a
+// população civilizada pela metade junto — dezoito vilas travadas no nível 1,
+// nenhuma chegando a moinho ou mercado. A diferença entre um material e o
+// seguinte tem de ser sentida, e não decidir sozinha se a civilização existe.
+
+export const MAT_FATOR = new Float32Array(MATERIAIS_DE_OBRA.map((m) => m.fator));
+
+/**
+ * Empacota material e povo num byte só, para caber em `grid.acabamento`.
+ *
+ * Três bits para o material (quatro hoje, folga para oito) e cinco para a
+ * espécie de quem ergueu (vinte hoje, folga para trinta e duas). Um array a
+ * mais no `Grid` custa um byte por tile; dois arrays custariam dois, e não há
+ * nada que o segundo resolvesse.
+ */
+export function empacotarAcabamento(material: number, especie: number): number {
+  return (material & 7) | ((especie & 31) << 3);
+}
+
+export function materialDoAcabamento(v: number): number {
+  return v & 7;
+}
+
+export function especieDoAcabamento(v: number): number {
+  return (v >> 3) & 31;
+}
+
 
 /**
  * Construções das civilizações.
@@ -71,33 +133,45 @@ export interface Edificio extends Definicao {
   readonly marco?: boolean;
   /** Quantos moradores dormem dentro. Casa é o que permite haver filho. */
   readonly moradia?: number;
+  /**
+   * Material de obra mínimo, por índice em `MATERIAIS_DE_OBRA`.
+   *
+   * Um castelo não se levanta de palha. A vila constrói com o melhor material
+   * que o reino domina, e nunca abaixo deste piso — o que na prática é uma
+   * segunda tranca além da tecnologia que libera o prédio.
+   */
+  readonly materialMinimo?: number;
 }
 
 export const edificios = new Registro<Edificio>('edificios');
 
 edificios.registrarTodos([
-  { id: 'casa', nome: 'casa', cor: [150, 96, 62], custoMadeira: 10, custoPedra: 0, abriga: 4, resistencia: 20, nivelMinimo: 1, ocupa: [2, 2], sprite: [3, 3.6], moradia: 4 },
+  // A fogueira é a moradia da era tribal: sem ela um povo que ainda não
+  // descobriu o abrigo não teria onde ter filho, e a civilização começaria o
+  // mundo incapaz de crescer por conta própria.
+  { id: 'fogueira', nome: 'fogueira', cor: [188, 118, 60], custoMadeira: 4, custoPedra: 0, abriga: 6, resistencia: 6, nivelMinimo: 1, ocupa: [1, 1], sprite: [1.4, 1.3], moradia: 6, maximo: 10, materialMinimo: 0 },
+  { id: 'casa', nome: 'casa', cor: [150, 96, 62], custoMadeira: 10, custoPedra: 0, abriga: 9, resistencia: 20, nivelMinimo: 1, ocupa: [2, 2], sprite: [3, 3.6], moradia: 6 },
   { id: 'celeiro', nome: 'celeiro', cor: [176, 138, 74], custoMadeira: 18, custoPedra: 4, abriga: 0, resistencia: 25, nivelMinimo: 1, ocupa: [3, 2], sprite: [3, 2.6] },
   { id: 'fazenda', nome: 'fazenda', cor: [190, 176, 88], custoMadeira: 8, custoPedra: 0, abriga: 0, resistencia: 10, nivelMinimo: 1, ocupa: [2, 2], sprite: [2, 0.9] },
-  { id: 'muralha', nome: 'muralha', cor: [128, 124, 118], custoMadeira: 4, custoPedra: 16, abriga: 0, resistencia: 90, nivelMinimo: 2, ocupa: [1, 1], sprite: [1, 1.6] },
-  { id: 'torre', nome: 'torre de guarda', cor: [106, 102, 98], custoMadeira: 10, custoPedra: 24, abriga: 2, resistencia: 70, nivelMinimo: 2, ocupa: [1, 1], sprite: [1, 3.2] },
-  { id: 'castelo', nome: 'castelo', cor: [92, 96, 108], custoMadeira: 40, custoPedra: 80, abriga: 12, resistencia: 160, nivelMinimo: 3, ocupa: [4, 3], sprite: [5, 5] },
-  { id: 'serraria', nome: 'serraria', cor: [138, 104, 60], custoMadeira: 26, custoPedra: 6, abriga: 1, resistencia: 30, nivelMinimo: 2, ocupa: [3, 2], sprite: [3, 2.6], bonusMadeira: 0.5, maximo: 3 },
-  { id: 'mina', nome: 'mina', cor: [92, 86, 82], custoMadeira: 22, custoPedra: 14, abriga: 1, resistencia: 40, nivelMinimo: 2, ocupa: [2, 2], sprite: [2, 2.5], bonusMinerio: 0.6, maximo: 3 , aceitaMontanha: true },
-  { id: 'ferraria', nome: 'ferraria', cor: [110, 78, 66], custoMadeira: 20, custoPedra: 20, abriga: 1, resistencia: 45, nivelMinimo: 2, ocupa: [2, 2], sprite: [2, 2.5], forja: 3, maximo: 2 },
-  { id: 'mercado', nome: 'mercado', cor: [186, 148, 78], custoMadeira: 30, custoPedra: 10, abriga: 2, resistencia: 25, nivelMinimo: 3, ocupa: [3, 2], sprite: [3, 2.6], comercio: true, maximo: 2 },
-  { id: 'templo', nome: 'templo', cor: [206, 200, 186], custoMadeira: 18, custoPedra: 22, abriga: 2, resistencia: 60, nivelMinimo: 3, ocupa: [3, 3], sprite: [3, 4], moral: 2.5, maximo: 2 },
-  { id: 'prefeitura', nome: 'prefeitura', cor: [190, 176, 150], custoMadeira: 26, custoPedra: 26, abriga: 3, resistencia: 110, nivelMinimo: 2, maximo: 1, ocupa: [2, 2], sprite: [3, 4], marco: true },
-  { id: 'banco', nome: 'banco', cor: [176, 160, 96], custoMadeira: 24, custoPedra: 38, abriga: 2, resistencia: 120, nivelMinimo: 4, maximo: 1, ocupa: [2, 2], sprite: [3, 3.2], marco: true },
-  { id: 'biblioteca', nome: 'biblioteca', cor: [162, 140, 168], custoMadeira: 26, custoPedra: 16, abriga: 2, resistencia: 60, nivelMinimo: 3, maximo: 1, ocupa: [2, 2], sprite: [3, 3.2], marco: true },
-  { id: 'taverna', nome: 'taverna', cor: [160, 106, 62], custoMadeira: 32, custoPedra: 10, abriga: 3, resistencia: 40, nivelMinimo: 2, maximo: 2, ocupa: [2, 2], sprite: [3, 3.2], marco: true },
-  { id: 'quartel', nome: 'quartel', cor: [110, 104, 92], custoMadeira: 22, custoPedra: 24, abriga: 4, resistencia: 100, nivelMinimo: 2, maximo: 2, ocupa: [2, 2], sprite: [3, 3.2], marco: true },
-  { id: 'poco', nome: 'poço', cor: [130, 128, 126], custoMadeira: 6, custoPedra: 18, abriga: 0, resistencia: 50, nivelMinimo: 2, maximo: 2, ocupa: [1, 1], sprite: [1, 1.6], marco: true },
-  { id: 'moinho', nome: 'moinho de vento', cor: [196, 178, 140], custoMadeira: 34, custoPedra: 12, abriga: 1, resistencia: 35, nivelMinimo: 2, bonusComida: 0.45, maximo: 3, ocupa: [2, 2], sprite: [3, 4.6], semeiaEmVolta: 3 },
+  { id: 'muralha', nome: 'muralha', cor: [128, 124, 118], custoMadeira: 4, custoPedra: 16, abriga: 0, resistencia: 90, nivelMinimo: 2, ocupa: [1, 1], sprite: [1, 1.6], materialMinimo: 2 },
+  { id: 'torre', nome: 'torre de guarda', cor: [106, 102, 98], custoMadeira: 10, custoPedra: 24, abriga: 2, resistencia: 70, nivelMinimo: 2, ocupa: [1, 1], sprite: [1, 3.2], materialMinimo: 2 },
+  { id: 'castelo', nome: 'castelo', cor: [92, 96, 108], custoMadeira: 40, custoPedra: 80, abriga: 12, resistencia: 160, nivelMinimo: 3, ocupa: [4, 3], sprite: [5, 5], materialMinimo: 3 },
+  { id: 'serraria', nome: 'serraria', cor: [138, 104, 60], custoMadeira: 26, custoPedra: 6, abriga: 1, resistencia: 30, nivelMinimo: 2, ocupa: [3, 2], sprite: [3, 2.6], bonusMadeira: 0.5, maximo: 3, materialMinimo: 1 },
+  { id: 'mina', nome: 'mina', cor: [92, 86, 82], custoMadeira: 22, custoPedra: 14, abriga: 1, resistencia: 40, nivelMinimo: 2, ocupa: [2, 2], sprite: [2, 2.5], bonusMinerio: 0.6, maximo: 3 , aceitaMontanha: true, materialMinimo: 1 },
+  { id: 'ferraria', nome: 'ferraria', cor: [110, 78, 66], custoMadeira: 20, custoPedra: 20, abriga: 1, resistencia: 45, nivelMinimo: 2, ocupa: [2, 2], sprite: [2, 2.5], forja: 3, maximo: 2, materialMinimo: 2 },
+  { id: 'mercado', nome: 'mercado', cor: [186, 148, 78], custoMadeira: 30, custoPedra: 10, abriga: 2, resistencia: 25, nivelMinimo: 3, ocupa: [3, 2], sprite: [3, 2.6], comercio: true, maximo: 2, materialMinimo: 1 },
+  { id: 'templo', nome: 'templo', cor: [206, 200, 186], custoMadeira: 18, custoPedra: 22, abriga: 2, resistencia: 60, nivelMinimo: 3, ocupa: [3, 3], sprite: [3, 4], moral: 2.5, maximo: 2, materialMinimo: 3 },
+  { id: 'prefeitura', nome: 'prefeitura', cor: [190, 176, 150], custoMadeira: 26, custoPedra: 26, abriga: 3, resistencia: 110, nivelMinimo: 2, maximo: 1, ocupa: [2, 2], sprite: [3, 4], marco: true, materialMinimo: 2 },
+  { id: 'banco', nome: 'banco', cor: [176, 160, 96], custoMadeira: 24, custoPedra: 38, abriga: 2, resistencia: 120, nivelMinimo: 4, maximo: 1, ocupa: [2, 2], sprite: [3, 3.2], marco: true, materialMinimo: 2 },
+  { id: 'biblioteca', nome: 'biblioteca', cor: [162, 140, 168], custoMadeira: 26, custoPedra: 16, abriga: 2, resistencia: 60, nivelMinimo: 3, maximo: 1, ocupa: [2, 2], sprite: [3, 3.2], marco: true, materialMinimo: 2 },
+  { id: 'taverna', nome: 'taverna', cor: [160, 106, 62], custoMadeira: 32, custoPedra: 10, abriga: 3, resistencia: 40, nivelMinimo: 2, maximo: 2, ocupa: [2, 2], sprite: [3, 3.2], marco: true, materialMinimo: 1 },
+  { id: 'quartel', nome: 'quartel', cor: [110, 104, 92], custoMadeira: 22, custoPedra: 24, abriga: 4, resistencia: 100, nivelMinimo: 2, maximo: 2, ocupa: [2, 2], sprite: [3, 3.2], marco: true, materialMinimo: 2 },
+  { id: 'poco', nome: 'poço', cor: [130, 128, 126], custoMadeira: 6, custoPedra: 18, abriga: 0, resistencia: 50, nivelMinimo: 2, maximo: 2, ocupa: [1, 1], sprite: [1, 1.6], marco: true, materialMinimo: 2 },
+  { id: 'moinho', nome: 'moinho de vento', cor: [196, 178, 140], custoMadeira: 34, custoPedra: 12, abriga: 1, resistencia: 35, nivelMinimo: 2, bonusComida: 0.45, maximo: 3, ocupa: [2, 2], sprite: [3, 4.6], semeiaEmVolta: 3, materialMinimo: 1 },
   // O porto é a maior obra do jogo e a única que não serve para nada em terra:
   // ele existe para os barcos saírem dele. Só se ergue em praia ou à beira de
   // lago — rio, mesmo largo, não tem espaço para atracar.
-  { id: 'porto', nome: 'porto', cor: [124, 96, 62], custoMadeira: 34, custoPedra: 12, abriga: 2, resistencia: 70, nivelMinimo: 2, maximo: 1, ocupa: [4, 3], sprite: [5, 3.4], naAgua: true },
+  { id: 'porto', nome: 'porto', cor: [124, 96, 62], custoMadeira: 34, custoPedra: 12, abriga: 2, resistencia: 70, nivelMinimo: 2, maximo: 1, ocupa: [4, 3], sprite: [5, 3.4], naAgua: true, materialMinimo: 1 },
   // O vulcão não é obra de ninguém: é acidente do terreno, e mora aqui pelo
   // mesmo motivo da ruína — precisa de um tile-âncora, de um desenho alto e de
   // entrar na varredura de profundidade junto com árvore e casa. Antes ele era
@@ -108,6 +182,7 @@ edificios.registrarTodos([
 ]);
 
 export const ED = {
+  fogueira: edificios.indice('fogueira'),
   casa: edificios.indice('casa'),
   celeiro: edificios.indice('celeiro'),
   fazenda: edificios.indice('fazenda'),
@@ -157,3 +232,26 @@ export const ED_NA_AGUA = new Uint8Array(edificios.todos().map((e) => (e.naAgua 
 export const ED_MORADIA = new Uint8Array(edificios.todos().map((e) => e.moradia ?? 0));
 /** [largura, altura] do desenho, em tiles. Aceita fração — ver `REC_SPRITE`. */
 export const ED_SPRITE = new Float32Array(edificios.todos().flatMap((e) => [...e.sprite]));
+/** Material de obra mínimo de cada prédio, por índice. */
+export const ED_MATERIAL_MINIMO = new Uint8Array(
+  edificios.todos().map((e) => e.materialMinimo ?? 0),
+);
+/**
+ * Que tecnologia libera cada prédio, por índice — ou -1 quando ele não depende
+ * de nenhuma.
+ *
+ * A tabela é montada **a partir do registro de tecnologias**, e não declarada
+ * de novo aqui, para não haver duas listas para manter em dia. Prédio que
+ * nenhuma tecnologia cita fica livre: é o caso da ruína e do vulcão, que não
+ * são obra de ninguém.
+ */
+export const ED_TECNOLOGIA = (() => {
+  const a = new Int16Array(edificios.tamanho).fill(-1);
+  for (const t of tecnologias.todos()) {
+    for (const id of t.liberaEdificios ?? []) {
+      const i = edificios.talvez(id) ? edificios.indice(id) : -1;
+      if (i >= 0) a[i] = tecnologias.indice(t.id);
+    }
+  }
+  return a;
+})();

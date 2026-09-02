@@ -8,8 +8,11 @@ import { BAL } from './balanco.js';
  * Comércio entre aldeias.
  *
  * Quem tem mercado vende o que sobra e compra o que falta, pagando em ouro. O
- * parceiro pode ser outra aldeia do mesmo reino ou de um reino aliado — nunca
- * de um inimigo.
+ * parceiro pode ser outra aldeia do mesmo reino, de um aliado, ou de **qualquer
+ * reino que já se conheça e com quem não haja guerra nem ódio aberto** — antes
+ * era só aliado, e como aliança é rara, o comércio entre povos praticamente não
+ * existia. Negociar é o caminho normal de dois vizinhos que se toleram, e é por
+ * ele que a relação sobe até dar em aliança, e não o contrário.
  *
  * É o que dá função ao ouro e faz a geografia importar: uma aldeia na montanha
  * tem ferro e nenhuma lavoura, e sobrevive vendendo minério para a aldeia da
@@ -20,19 +23,28 @@ export const sistemaEconomia: Sistema = {
   id: 'economia',
   intervalo: BAL.intervaloComercio,
   executar(mundo: Mundo): void {
-    const comerciantes = mundo.aldeias.filter((a) => a.ativa && temMercado(a));
-    if (comerciantes.length < 2) return;
+    // Quem tem mercado é quem **puxa** o comércio: monta a caravana, paga e
+    // traz de volta. Quem vende não precisa de mercado nenhum — basta ter
+    // sobra e estar ao alcance.
+    //
+    // Exigir mercado nos dois lados era o que mantinha o comércio no papel:
+    // mercado pede vila de nível 3, e num mundo de trinta povoados havia dois.
+    // Dois mercados que por acaso fossem de reinos em guerra, ou que nem se
+    // conhecessem, davam zero negócios em vinte mil ticks.
+    const feirantes = mundo.aldeias.filter((a) => a.ativa && temMercado(a));
+    if (feirantes.length === 0) return;
+    const vendedoras = mundo.aldeias.filter((a) => a.ativa);
 
-    // Antes de negociar entre si, cada praça escoa o excedente para fora do
-    // mapa. Sem esta entrada, o ouro só existiria se já existisse: ninguém
-    // teria com que fazer a primeira compra e o comércio nunca começava.
-    for (const a of comerciantes) venderParaFora(a);
+    // Antes de negociar, cada praça escoa o excedente para fora do mapa. Sem
+    // esta entrada, o ouro só existiria se já existisse: ninguém teria com que
+    // fazer a primeira compra e o comércio nunca começava.
+    for (const a of feirantes) venderParaFora(a);
 
-    for (const compradora of comerciantes) {
+    for (const compradora of feirantes) {
       const querido = oQueComprar(compradora);
       if (!querido) continue;
 
-      const vendedora = acharVendedora(mundo, compradora, querido, comerciantes);
+      const vendedora = acharVendedora(mundo, compradora, querido, vendedoras);
       if (!vendedora) continue;
 
       negociar(mundo, compradora, vendedora, querido);
@@ -110,11 +122,19 @@ function acharVendedora(
   return melhor;
 }
 
-/** Mesmo reino, ou reinos que se declararam aliados. */
+/**
+ * Mesmo reino, ou dois reinos que se conhecem e se toleram.
+ *
+ * A ordem das guardas é a da névoa: ninguém negocia com quem não sabe que
+ * existe. Depois vem a guerra, e por último o desprezo — abaixo de
+ * `relacaoParaComerciar` a caravana não sai, mesmo em tempo de paz.
+ */
 function podemComerciar(mundo: Mundo, a: Aldeia, b: Aldeia): boolean {
   if (a.reino === b.reino) return true;
+  if (!mundo.conhece(a.reino, b.reino)) return false;
   if (mundo.emGuerra(a.reino, b.reino)) return false;
-  return mundo.saoAliados(a.reino, b.reino);
+  if (mundo.saoAliados(a.reino, b.reino)) return true;
+  return mundo.relacao(a.reino, b.reino) >= BAL.relacaoParaComerciar;
 }
 
 function negociar(mundo: Mundo, compradora: Aldeia, vendedora: Aldeia, material: Material): void {

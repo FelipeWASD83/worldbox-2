@@ -1,8 +1,12 @@
 import type { Mundo } from '../core/mundo.js';
 import {
-  DICA_FOCO, FOCOS, NOME_FOCO, definirFoco, doarPara, focoDe, mandarColonizar,
-  ordenarAlianca, ordenarGuerra, ordenarPaz, ordenarRomper, vizinhosDiplomaticos,
+  DICA_FOCO, FOCOS, NOME_FOCO, TAXAS, definirFoco, definirImposto, doarPara, estranhos, focoDe,
+  mandarColonizar,
+  ordenarAlianca, ordenarGuerra, ordenarOdio, ordenarPaz, ordenarPesquisa, ordenarRebeliao,
+  ordenarRevelar, ordenarRomper, vizinhosDiplomaticos,
 } from '../sim/comandos.js';
+import { NOME_ERA, tecnologias } from '../dados/tecnologias.js';
+import { lealdadeMedia } from '../sim/cultura.js';
 
 /**
  * O painel de ordens.
@@ -79,6 +83,28 @@ export class PainelComando {
     }
     this.alvo.append(linhaFoco);
 
+    // ------------------------------------------------------------ imposto
+    // O imposto é a alavanca política que o jogador tem na mão: enche o cofre
+    // do reino e esvazia a lealdade de quem paga. Deixar isso só para a
+    // simulação decidir seria tirar do jogador justamente a decisão
+    // interessante.
+    this.alvo.append(secao('Imposto'));
+    const linhaImposto = document.createElement('div');
+    linhaImposto.className = 'botoes-comando';
+    for (const [rotulo, taxa, dica] of TAXAS) {
+      const b = document.createElement('button');
+      b.className = 'btn-comando';
+      b.textContent = rotulo;
+      b.title = dica;
+      if (Math.abs(a.imposto - taxa) < 0.001) b.classList.add('ativo');
+      b.addEventListener('click', () => {
+        a.imposto = taxa;
+        this.dizer(definirImposto(mundo, a, taxa));
+      });
+      linhaImposto.append(b);
+    }
+    this.alvo.append(linhaImposto);
+
     this.alvo.append(secao('Ordens'));
     const linhaOrdens = document.createElement('div');
     linhaOrdens.className = 'botoes-comando';
@@ -99,7 +125,43 @@ export class PainelComando {
         }),
       );
     }
+    linhaOrdens.append(
+      botao('Incitar revolta', 'A vila levanta a própria bandeira, leva o território que domina e já nasce em guerra com o reino de origem.', () => {
+        this.dizer(ordenarRebeliao(mundo, a));
+      }),
+    );
     this.alvo.append(linhaOrdens);
+
+    // A lealdade média é o número que explica se a revolta vai pegar sozinha, e
+    // por isso fica ao lado do botão que a força.
+    const lealdade = lealdadeMedia(mundo, a);
+    const aviso = document.createElement('p');
+    aviso.className = 'aviso-comando';
+    aviso.textContent = lealdade < 26
+      ? `Lealdade média ${lealdade.toFixed(0)} — esta vila se separa a qualquer momento.`
+      : `Lealdade média ${lealdade.toFixed(0)}.`;
+    this.alvo.append(aviso);
+
+    // ------------------------------------------------------------ conhecimento
+    // Onde este povo está na história, e o poder de empurrá-lo adiante.
+    if (reino?.ativo) {
+      this.alvo.append(secao(`Era ${NOME_ERA[reino.era] ?? reino.era}`));
+      const linhaTec = document.createElement('div');
+      linhaTec.className = 'botoes-comando';
+      const resumo = document.createElement('i');
+      resumo.className = 'estado';
+      resumo.textContent = `${reino.tecnologias.size}/${tecnologias.tamanho} descobertas · ${reino.conhecimento.toFixed(0)} de conhecimento`;
+      resumo.title = [...reino.tecnologias]
+        .map((t) => tecnologias.porIndice(t).nome)
+        .join(', ');
+      linhaTec.append(resumo);
+      linhaTec.append(
+        botao('Revelar segredo', 'Ensina de graça a próxima descoberta que este reino perseguia.', () => {
+          this.dizer(ordenarPesquisa(mundo, reino));
+        }),
+      );
+      this.alvo.append(linhaTec);
+    }
 
     // ------------------------------------------------------------ diplomacia
     if (reino?.ativo) {
@@ -119,6 +181,14 @@ export class PainelComando {
           const aliado = mundo.saoAliados(reino.id, outro.id);
           estado.textContent = emGuerra ? 'guerra' : aliado ? 'aliados' : `${mundo.relacao(reino.id, outro.id) | 0}`;
           estado.className = emGuerra ? 'estado guerra' : aliado ? 'estado paz' : 'estado';
+          // A mágoa acumulada é o que a relação sozinha não conta: dois reinos
+          // podem estar em paz com relação neutra e ainda assim ter uma guerra
+          // inteira de mortos entre eles, esperando o próximo motivo.
+          const magoa = Math.round(mundo.rancorEntre(reino.id, outro.id));
+          estado.title = magoa > 0
+            ? `Mágoa acumulada contra ${outro.nome}: ${magoa}.`
+            : `Nenhuma conta a acertar com ${outro.nome}.`;
+          if (magoa > 0) estado.textContent += ` · ✚${magoa}`;
 
           const acoes = document.createElement('div');
           acoes.className = 'botoes-comando';
@@ -140,6 +210,38 @@ export class PainelComando {
               }));
             }
           }
+          acoes.append(botao('Ódio', 'Envenena a relação e deixa mágoa que não some sozinha. Não declara guerra: dá o motivo para ela.', () => {
+            this.dizer(ordenarOdio(mundo, reino.id, outro.id));
+          }));
+
+          linha.append(nome, estado, acoes);
+          this.alvo.append(linha);
+        }
+      }
+
+      // -------------------------------------------------- o que eles não sabem
+      // A névoa também é informação: ver a lista dos reinos que existem e que
+      // este ainda ignora é metade do que torna a revelação uma decisão.
+      const naoSabem = estranhos(mundo, reino);
+      if (naoSabem.length > 0) {
+        this.alvo.append(secao('Ainda não sabem que existem'));
+        for (const outro of naoSabem.slice(0, 6)) {
+          const linha = document.createElement('div');
+          linha.className = 'linha-diplomacia';
+
+          const nome = document.createElement('span');
+          nome.textContent = outro.nome;
+          nome.style.color = `#${outro.cor.toString(16).padStart(6, '0')}`;
+
+          const estado = document.createElement('i');
+          estado.className = 'estado';
+          estado.textContent = 'na névoa';
+
+          const acoes = document.createElement('div');
+          acoes.className = 'botoes-comando';
+          acoes.append(botao('Revelar', `Faz ${reino.nome} e ${outro.nome} saberem um do outro. A partir daí há relação, comércio e guerra possíveis.`, () => {
+            this.dizer(ordenarRevelar(mundo, reino.id, outro.id));
+          }));
 
           linha.append(nome, estado, acoes);
           this.alvo.append(linha);

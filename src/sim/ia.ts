@@ -5,9 +5,11 @@ import { Estado, MARCA_DOMESTICADO, MARCA_SOLDADO } from '../core/criaturas.js';
 import { NIVEL_MAR, NIVEL_MONTANHA } from '../core/grid.js';
 import {
   ESP_AGRESSAO, ESP_CACA, ESP_CIVILIZADO, ESP_DOMINIO, ESP_HERBIVORO,
-  ESP_DANO, ESP_LOTACAO, ESP_MARCIAL, ESP_MEDO, ESP_MONSTRO, ESP_VIDA, ESP_VISAO,
+  ESP_DANO, ESP_LOTACAO, ESP_MARCIAL, ESP_MEDO, ESP_MONSTRO, ESP_VISAO,
   TOTAL_ESPECIES, especies,
 } from '../dados/especies.js';
+import { Campo, MASCARA_DESTEMIDO } from '../dados/tracos.js';
+import { fator, vidaMaxima } from './genetica.js';
 import { BIOMA_AGUA } from '../dados/biomas.js';
 import { REC_COMIDA } from '../dados/recursos.js';
 import { oQueFalta, procurarRecurso } from './coleta.js';
@@ -274,7 +276,9 @@ const cerebroAnimal: Cerebro = (mundo, i) => {
     return;
   }
 
-  if (c.vida[i] < ESP_VIDA[esp] * BAL.limiarFuga && ESP_AGRESSAO[esp] < 0.7) {
+  // Destemido não recua. Vive menos e leva mais gente junto.
+  const recua = (c.tracos[i] & MASCARA_DESTEMIDO) === 0;
+  if (recua && c.vida[i] < vidaMaxima(c, i) * BAL.limiarFuga && ESP_AGRESSAO[esp] < 0.7) {
     const perigo = mundo.espacial.maisProximo(c, i, visao, aceitaQuemMeCaca);
     if (perigo >= 0) {
       c.estado[i] = Estado.Fugindo;
@@ -384,10 +388,10 @@ const cerebroInteligente: Cerebro = (mundo, i) => {
   const inimigo = mundo.espacial.maisProximo(c, i, visao, aceitaAmeacaDeCivilizado);
   if (inimigo >= 0) {
     const soldado = (c.marcas[i] & MARCA_SOLDADO) !== 0;
-    const inteiro = c.vida[i] > ESP_VIDA[esp] * 0.5;
+    const inteiro = c.vida[i] > vidaMaxima(c, i) * 0.5;
     // gente enfrenta o que é mais forte quando está acompanhada: contra um
     // tigre, um aldeão sozinho morre, mas quatro dão conta
-    const meuDano = ESP_DANO[esp] * ESP_MARCIAL[esp];
+    const meuDano = ESP_DANO[esp] * ESP_MARCIAL[esp] * fator(c.tracos[i], Campo.dano);
     const superado = ESP_DANO[c.especie[inimigo]] > meuDano * 1.6;
     const acompanhado =
       !superado ||

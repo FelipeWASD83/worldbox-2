@@ -2,6 +2,8 @@ import type { Sistema } from '../core/sistemas.js';
 import type { Mundo } from '../core/mundo.js';
 import { Estado } from '../core/criaturas.js';
 import { ESP_CACA, ESP_DANO, ESP_MARCIAL, TOTAL_ESPECIES } from '../dados/especies.js';
+import { Campo } from '../dados/tracos.js';
+import { fator } from './genetica.js';
 import { EQ_ALCANCE, EQ_DANO, EQ_DEFESA } from '../dados/equipamentos.js';
 import { BAL } from './balanco.js';
 import { indiceDoMaterial } from './coleta.js';
@@ -37,7 +39,7 @@ export const sistemaCombate: Sistema = {
       if (dx * dx + dy * dy > alcance * alcance) continue;
 
       const esp = c.especie[i];
-      let dano = ESP_DANO[esp] * ESP_MARCIAL[esp];
+      let dano = ESP_DANO[esp] * ESP_MARCIAL[esp] * fator(c.tracos[i], Campo.dano);
       if (arma !== 0) dano += EQ_DANO[arma - 1];
       // veterania: cada luta deixa a criatura um pouco melhor (teto de +50%)
       dano *= 1 + Math.min(0.5, c.xp[i] * 0.02);

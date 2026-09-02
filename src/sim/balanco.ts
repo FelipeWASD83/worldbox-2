@@ -52,8 +52,17 @@ export const BAL = {
    * 0 ela vira escrava da primeira urgência e nunca levanta prefeitura.
    */
   decaimentoDaFila: 0.72,
-  /** Chance de a aldeia próspera atrair alguém de fora, por avaliação. */
-  imigracaoParaAldeia: 0.16,
+  /**
+   * Chance de a aldeia próspera atrair alguém de fora, por avaliação.
+   *
+   * Caiu de 0,16 quando a densidade de casas foi cortada a pedido. Os dois
+   * números são a mesma balança: casa é o caminho principal de crescimento do
+   * projeto, e imigração é a válvula para a vila que ainda não tem casa
+   * nenhuma. Com metade das casas no mundo e a imigração no valor antigo, a
+   * válvula virou o caminho principal — medindo seis sementes, em quatro delas
+   * chegava mais gente de fora do que nascia dentro das casas.
+   */
+  imigracaoParaAldeia: 0.11,
   /** Chance de um morador largar a lida para procurar casa e ter filho. */
   vontadeDeFamilia: 0.45,
   /** Quanto tempo um casal fica dentro de casa tentando ter filho. */
@@ -143,6 +152,27 @@ export const BAL = {
   travessiaMinima: 20,
   travessiaMaxima: 130,
 
+  // --------------------------------------------------------------- política
+  /** A cada quantos ticks cargos e impostos são revistos. */
+  intervaloPolitica: 120,
+  /**
+   * Vantagem de já estar no cargo, ao comparar fortunas.
+   *
+   * Sem ela o posto trocaria de mãos toda passada entre dois vizinhos de bolso
+   * quase igual, e "governante" viraria um rótulo piscando.
+   */
+  bonusDeCargo: 0.15,
+  /** Fração do imposto que fica com o governante; o resto sobe ao rei. */
+  fatiaDoGovernante: 0.35,
+  /** Quanto de lealdade cada ponto de imposto custa, por cobrança. */
+  desgostoPorImposto: 22,
+  /** Lealdade perdida por todo o reino quando a coroa muda de família. */
+  abaloDeDinastia: 12,
+  /** Fração do tesouro que o rei novo leva para o bolso ao assumir. */
+  heranca: 0.25,
+  /** Ouro que o trabalhador embolsa por carga entregue na vila. */
+  salarioPorCarga: 0.35,
+
   // ------------------------------------------------------------------ clima
   /** Quantas nuvens por 90 mil tiles de mapa. */
   nuvensPorMilTiles: 9,
@@ -152,10 +182,19 @@ export const BAL = {
   chanceNuvemDeChuva: 0.42,
   /** Raio de uma nuvem, em tiles. */
   raioNuvem: [7, 18],
-  /** Quanto o vento anda por tick. */
-  velocidadeDoVento: 0.018,
+  /**
+   * Quanto o vento anda por tick.
+   *
+   * A 0,018 uma nuvem levava vinte mil ticks para cruzar o mapa médio — mais de
+   * quinze minutos de relógio, tempo em que o jogador nunca veria uma frente
+   * chegar. Aqui a travessia leva uns cinco minutos, que é tempo de perceber o
+   * tempo mudando sem ele virar estroboscópio.
+   */
+  velocidadeDoVento: 0.06,
   /** A cada quantos ticks o vento muda de direção. */
   intervaloDoVento: 240,
+  /** Quanto o vento gira por mudança, em radianos. */
+  giroDoVento: 0.22,
   /** A cada quantos ticks a chuva molha o chão. */
   intervaloPrecipitacao: 6,
   /** Vegetação ganha por passada de chuva. */
@@ -182,8 +221,30 @@ export const BAL = {
   danoBomba: 90,
 
   // ---------------------------------------------------------------- ecologia
-  /** Chance de um tile vazio ao lado de mata brotar uma árvore nova. */
-  chanceRebrotar: 0.006,
+  /**
+   * Chance de um tile vazio ao lado de mata brotar uma árvore nova.
+   *
+   * Baixo de propósito. Com o valor antigo (quatro vezes este) a clareira se
+   * fechava em minutos e o mapa voltava sozinho ao teto de ocupação — não dava
+   * para ver uma vila desmatando o entorno, porque a mata crescia mais rápido
+   * que o machado.
+   */
+  chanceRebrotar: 0.007,
+  /**
+   * Fator de água a partir do qual a rebrota acontece na taxa cheia.
+   *
+   * `fatorDeAgua` devolve por volta de 1,6 na margem de um rio e 0,4 no seco.
+   * Dividindo por este número, a margem passa quase sempre e o interflúvio seco
+   * rebrota num quarto das vezes — que é o que concentra a mata na bacia em vez
+   * de espalhá-la por igual pelo bioma.
+   *
+   * O valor foi calibrado, e não escolhido: com ele a taxa **média** de rebrota
+   * sobre o chão fértil do mundo dá 0,0041, praticamente a mesma de antes de a
+   * água entrar na conta. O que muda é onde ela acontece, não quanta mata o
+   * mundo repõe no total — que é o que impede esta mudança de virar, sem
+   * querer, um corte na madeira do jogo inteiro.
+   */
+  rebrotaJuntoDagua: 1.7,
   /** Vegetação recuperada por tick em tile fértil. */
   crescimentoVegetacao: 0.9,
   /**
@@ -208,14 +269,25 @@ export const BAL = {
   // --------------------------------------------------------------- civilização
   /** Comida que um morador consome por tick. */
   consumoAldeia: 0.032,
+  /** A que distância da praça o morador consegue usar o celeiro. */
+  alcanceDoCeleiro: 7,
   /** Comida que um trabalhador traz por viagem. */
   cargaTrabalho: 22,
   /** Comida acumulada necessária para nascer um novo morador. */
   comidaPorNascimento: 130,
   /** Quanto além do território a aldeia manda gente buscar recurso. */
   alcanceDeTrabalho: 24,
-  /** Comida que cada fazenda rende por tick. */
-  rendaPorFazenda: 0.02,
+  /**
+   * Comida que cada fazenda rende por tick.
+   *
+   * Subiu junto com o corte na rebrota dos recursos. Fruta e mata passaram a
+   * demorar quatro vezes mais para voltar, e a comida do mundo veio junto: a
+   * população civilizada caiu de mil e duzentos para trezentos. A resposta não
+   * foi devolver a rebrota — mato que se refaz em minutos tira o peso de
+   * derrubá-lo — e sim fazer a **lavoura** sustentar a vila, que é o caminho de
+   * um povo que já não vive de colher o que acha.
+   */
+  rendaPorFazenda: 0.1,
   /**
    * Quantas roças soltas a vila planta antes de precisar de um moinho.
    *
@@ -247,27 +319,256 @@ export const BAL = {
   /**
    * Raio de território por nível.
    *
-   * Encurtado de propósito: vila grande demais tira o motivo de fundar vila
-   * nova, e o mapa acaba com quatro manchas enormes em vez de um punhado de
-   * povoados espalhados.
+   * Dobrado em 02/09/2026. Os números curtos de antes vinham do medo de "vila
+   * grande demais tira o motivo de fundar vila nova" — e o efeito medido foi o
+   * oposto do desejado: com raio 18 no nível 4, a vila enchia o território
+   * quase na fundação e o reino saía pipocando colônia, terminando com
+   * cinquenta povoados de duzentos tiles cada. Território pequeno não gera
+   * expansão, gera confete.
    */
-  raioPorNivel: [0, 7, 10, 14, 18, 23],
+  raioPorNivel: [0, 10, 17, 26, 36, 48],
   /** População da aldeia a partir da qual ela tenta fundar uma colônia. */
-  populacaoParaColonizar: 14,
+  /**
+   * Quantos tiles a vila toma por passada de gestão.
+   *
+   * É a velocidade de expansão. Alto o bastante para a fronteira andar de forma
+   * visível — antes o território levava a partida inteira para encher o círculo
+   * e o jogador nunca via um reino crescer.
+   */
+  tilesPorExpansao: 26,
+  /** Teto da fila de fronteira, para ela não crescer sem fim. */
+  franjaMaxima: 3000,
+  populacaoParaColonizar: 20,
   /** Chance de colonizar, por avaliação, com a vila ainda tendo espaço. */
-  chanceColonizar: 0.03,
+  chanceColonizar: 0.008,
   /** Chance de colonizar quando o território da vila já encheu. */
-  chanceColonizarLotada: 0.3,
-  /** Distância mínima entre aldeias. */
-  distanciaEntreAldeias: 30,
+  chanceColonizarLotada: 0.22,
+  /**
+   * Distância mínima entre aldeias.
+   *
+   * Tem de ser maior que a soma de dois territórios crescidos, senão a colônia
+   * nasce **dentro** do que a mãe já domina e nunca consegue chão para chamar de
+   * seu. Foi o que aconteceu quando o raio dobrou e este número ficou para trás:
+   * vinte e quatro de quarenta e quatro vilas travadas no nível 1, sufocadas
+   * pela vizinha.
+   */
+  distanciaEntreAldeias: 36,
   /** Fração dos moradores que vira soldado quando o reino está em guerra. */
   fracaoSoldados: 0.35,
   /** Fração quando o jogador manda a aldeia focar no exército. */
   fracaoSoldadosEmGuerraTotal: 0.7,
 
+  // ------------------------------------------------------------- genética
+  /**
+   * Ódio máximo entre dois povos para eles ainda terem filho um com o outro.
+   *
+   * Sai da mesma tabela que a diplomacia usa (`ODIO_POVOS`), e não de um número
+   * novo: se dois povos se detestam, não há casal. Com 0,35 o mundo libera
+   * humano com elfo (0,25) e humano com anão (0,23), e tranca elfo com anão
+   * (0,74) e tudo o que envolve orc (0,78 para cima). Subir este número é
+   * abrir o mundo para mestiçagem geral; descer é fechá-lo.
+   */
+  odioParaCruzar: 0.35,
+  /** Chance de um traço de um dos pais passar para o filho. */
+  herancaDeTraco: 0.45,
+  /** A mesma chance quando **os dois** pais têm aquele traço. */
+  herancaDeTracoDobrada: 0.82,
+  /** Chance de um traço novo aparecer do nada num nascimento. */
+  chanceDeMutacao: 0.18,
+  /**
+   * Chance de um imigrante ser de outro povo, e não do povo da vila.
+   *
+   * É a única porta pela qual dois povos passam a morar juntos, e portanto a
+   * única origem de mestiço no mundo. Baixa de propósito: uma vila humana
+   * continua sendo uma vila humana, com uma família élfica no fim da rua.
+   */
+  imigracaoDeOutroPovo: 0.14,
+  /** Chance de quem chega de fora do mapa já vir com um traço. */
+  chanceDeTracoAoChegar: 0.55,
+
+  // --------------------------------------------------- conhecimento e eras
+  /** A cada quantos ticks os reinos rendem conhecimento e tentam descobrir. */
+  intervaloConhecimento: 200,
+  /**
+   * Pontos por avaliação que um reino produz só por existir, e por cabeça.
+   *
+   * Baixos de propósito: sozinhos, levam uma tribo à primeira descoberta em
+   * alguns milhares de ticks e não muito além disso. Quem quiser passar da era
+   * das aldeias precisa **construir** — é aí que os marcos entram.
+   */
+  conhecimentoBase: 1.6,
+  conhecimentoPorCabeca: 0.08,
+  /**
+   * O que cada marco rende por avaliação.
+   *
+   * A biblioteca vale sozinha mais que cem habitantes. É deliberado: era o
+   * prédio mais caro do jogo sem nenhuma função, e agora é a diferença entre um
+   * império que alcança o aço e um que morre na idade da pedra assentada.
+   */
+  conhecimentoPorBiblioteca: 4,
+  conhecimentoPorPrefeitura: 1.5,
+  conhecimentoPorTemplo: 1,
+  conhecimentoPorTaverna: 0.6,
+  /**
+   * Quanto vale, em conhecimento por avaliação, cada ponto de sabedoria acima
+   * do comum numa pessoa.
+   *
+   * Um sábio tem fator 2,4, ou seja, 1,4 acima do comum. Começou em 1,7, o que
+   * fazia cada sábio valer quase uma biblioteca — e como uns 5% da população
+   * nasce sábia, um reino grande juntava sete deles e cortava a idade imperial
+   * pela metade, de vinte e cinco mil ticks para treze mil. Em 0,6 o sábio
+   * continua sendo alguém que faz diferença sem ser sozinho o motor da história.
+   */
+  conhecimentoPorSabio: 0.6,
+  /** Multiplicador de tudo o que entra, depois que o reino descobre a escrita. */
+  conhecimentoDaEscrita: 1.3,
+
+  // ------------------------------------------------------- cultura e clãs
+  /**
+   * Quanto o clã puxa a fatia de moradores que vira soldado.
+   *
+   * Com 0,5, um clã inteiramente marcial manda 25% mais gente para a frente que
+   * a média e um clã de lavradores manda 25% menos. Já foi 1 — a faixa inteira,
+   * de metade ao dobro — e o custo medido foi alto: com a guerra tirando até
+   * metade da vila do trabalho, as aldeias paravam de construir casa, e o
+   * crescimento por nascimento em casa caía abaixo do crescimento por
+   * imigração, invertendo o que o projeto trata como caminho principal. Clã
+   * inclinando a balança é o que se quer; clã decidindo a economia da vila, não.
+   */
+  pesoDoClaNoExercito: 0.5,
+  /**
+   * Quanto o clã puxa o desgosto com o imposto.
+   *
+   * Aqui a faixa cheia não custa nada, porque o efeito é sobre lealdade e não
+   * sobre braço de trabalho: é justamente o que faz o mesmo imposto ser
+   * tolerável numa vila e revolucionário na outra.
+   */
+  pesoDoClaNoImposto: 1,
+  /** A cada quantos ticks a lealdade é reavaliada. */
+  intervaloCultura: 200,
+  /**
+   * Que fração da distância até o alvo a lealdade anda por avaliação.
+   *
+   * Baixo de propósito: lealdade que responde na hora vira um medidor piscando,
+   * e a rebelião passa a depender de um instante ruim em vez de um período ruim.
+   */
+  mareDaLealdade: 0.18,
+  /** Lealdade de quem não tem nem queixa nem motivo de gratidão. */
+  lealdadeBase: 52,
+  /** Teto do que o celeiro cheio acrescenta. */
+  lealdadePorFartura: 16,
+  /** Peso da submissão do clã, de -metade a +metade. */
+  lealdadePorSubmissao: 24,
+  /** Quanto custa ser governado por gente de outro clã, no clã mais fechado. */
+  lealdadePorGovernanteDeFora: 34,
+  /** O mesmo para o rei, que está longe e por isso incomoda menos. */
+  lealdadePorReiDeFora: 16,
+  /** Peso da guerra: anima o clã marcial e desanima o pacífico. */
+  lealdadePorGuerra: 22,
+  /** Quanto cada ponto de fome acima de 60 tira de lealdade. */
+  lealdadePorFome: 0.5,
+  /** Lealdade média abaixo da qual a vila se separa do reino. */
+  lealdadeParaRebelar: 28,
+  /** Lealdade abaixo da qual a vila vizinha adere à rebelião da outra. */
+  lealdadeParaSeguirARebeliao: 40,
+  /** Idade mínima da vila para ela ter identidade própria a defender. */
+  idadeParaRebelar: 3000,
+  /** População mínima para uma rebelião ter com que se sustentar. */
+  populacaoParaRebelar: 6,
+  /** Até onde a rebelião arrasta as vilas vizinhas descontentes. */
+  alcanceDaRebeliao: 70,
+  /**
+   * Chance de um grupo que se muda fundar um clã próprio.
+   *
+   * Vale para colonos e para quem chega de fora. Sem isto o mundo teria um clã
+   * por povo e a fase inteira seria decorativa: rebelião nasce de gente do mesmo
+   * reino discordar, e para discordar é preciso ser de clãs diferentes.
+   */
+  chanceDeClaNovo: 0.35,
+
+  // ------------------------------------------------------ névoa diplomática
+  /** A cada quantos ticks uma fatia do povo é conferida por contato. */
+  intervaloContato: 30,
+  /**
+   * A que distância da praça a pessoa consegue reportar o que viu.
+   *
+   * O contato só vira conhecimento do reino quando chega a quem manda, e quem
+   * manda está na praça. Ver `src/sim/contato.ts`.
+   */
+  distanciaDoRelato: 8,
+
   // --------------------------------------------------------------- diplomacia
   /** A cada quantos ticks a diplomacia é reavaliada. */
   intervaloDiplomacia: 300,
+  /**
+   * Quanto de rancor evapora a cada avaliação de diplomacia.
+   *
+   * Com 1,5 a cada 300 ticks, uma mágoa no teto leva umas vinte mil rodadas
+   * para se apagar — uma geração inteira. É o meio-termo entre esquecer a
+   * guerra assim que a paz é assinada e travar dois povos em ódio permanente.
+   */
+  esquecimentoDeRancor: 1.5,
+  /** Quanto o ódio entre os povos derruba a relação por avaliação, com contato. */
+  pesoDoOdioNaRelacao: 2.2,
+  /**
+   * Quanto a vizinhança aproxima dois reinos **do mesmo povo**, por avaliação.
+   *
+   * Contrapeso do atrito de fronteira para quem não tem ódio de povo pelo
+   * vizinho. É o que torna a aliança alcançável: sem ele, todo par de reinos com
+   * divisa comum derivava para -100 e o mecanismo de aliança nunca disparava em
+   * partida nenhuma.
+   */
+  parentescoNaFronteira: 3.2,
+  /**
+   * Soma de motivos a partir da qual um reino declara guerra.
+   *
+   * É o coração do casus belli. Nenhum motivo sozinho costuma bastar: fronteira
+   * disputada dá uns vinte, ódio antigo dá até trinta, e é a soma de dois ou
+   * três que passa daqui. Baixar este número é a alavanca para um mundo mais
+   * belicoso; subir, para um mundo de guerras raras e grandes.
+   */
+  limiarCasusBelli: 45,
+  /**
+   * Que fração do limiar os motivos precisam cair para a paz ser possível.
+   *
+   * Menor que 1 de propósito: se a paz exigisse os motivos zerados, nenhuma
+   * guerra por ódio antigo terminaria nunca — o ódio não passa.
+   */
+  fracaoParaPaz: 0.55,
+  /**
+   * Ticks de guerra até o desgaste chegar ao máximo.
+   *
+   * Dez anos de jogo. É o que decide a duração típica de um conflito: a chance
+   * de paz cresce com o quadrado do desgaste, então a primeira metade da guerra
+   * quase não produz proposta de trégua e a segunda produz muitas.
+   */
+  ticksAteCansarDaGuerra: 4000,
+  /** Chance de paz por avaliação quando o desgaste está no teto. */
+  chanceDePazPorDesgaste: 0.45,
+  /**
+   * Quanto tempo tem de passar entre uma guerra e a seguinte com o mesmo reino.
+   *
+   * Sem isto a paz durava uma avaliação: o motivo que começou a guerra continua
+   * inteiro no minuto seguinte à assinatura.
+   */
+  tregua: 2600,
+  /**
+   * Quanto cada guerra já aberta encarece abrir mais uma.
+   *
+   * Com 0,55, o segundo inimigo exige metade a mais de motivo que o primeiro, e
+   * o terceiro exige o dobro. É o que mantém o conflito localizado no mapa em
+   * vez de todo reino guerrear com todos os vizinhos ao mesmo tempo.
+   */
+  pesoDeFrenteAberta: 0.55,
+  /** Tetos de cada motivo de guerra. Ver `motivosDeGuerra` em `diplomacia.ts`. */
+  tetoMotivoFronteira: 22,
+  tetoMotivoOdio: 30,
+  tetoMotivoInimizade: 30,
+  tetoMotivoRancor: 28,
+  tetoMotivoTerra: 18,
+  tetoMotivoFome: 16,
+  tetoMotivoFraqueza: 16,
+  tetoMotivoAliado: 20,
   /** Relação acima da qual dois reinos firmam aliança. */
   limiarAlianca: 45,
   /** Relação abaixo da qual uma aliança se desfaz. */
@@ -288,8 +589,23 @@ export const BAL = {
   folgaParaExportar: 1.6,
   /** Quanto a caravana de fora paga, em relação ao valor base. */
   precoExportacao: 0.7,
+  /**
+   * Relação mínima para dois reinos não aliados negociarem entre si.
+   *
+   * Negativo de propósito: comércio não exige amizade, exige só que ninguém
+   * esteja com raiva demais para sentar à mesa. É por ele que a relação sobe
+   * até virar aliança.
+   */
+  relacaoParaComerciar: -20,
 
-  /** Relação abaixo da qual pode estourar guerra. */
+  /**
+   * Relação abaixo da qual pode estourar guerra.
+   *
+   * Deixou de ser o gatilho quando o casus belli entrou — hoje quem decide é a
+   * soma de motivos. Continua aqui porque a relação vira **um** dos motivos, e
+   * porque a interface usa este número para dizer quando dois reinos estão à
+   * beira do rompimento.
+   */
   limiarGuerra: -45,
   /** Relação acima da qual a guerra pode acabar. */
   limiarPaz: -15,

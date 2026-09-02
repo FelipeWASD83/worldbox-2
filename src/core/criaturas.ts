@@ -97,6 +97,71 @@ export class Criaturas {
   readonly escudo: Uint8Array;
   readonly armadura: Uint8Array;
 
+  /**
+   * Ouro que a pessoa tem no bolso.
+   *
+   * É o que decide **quem manda numa vila**: o governante é o cidadão mais
+   * rico. Riqueza entra por trabalho entregue, por cargo e por herança, e sai
+   * em imposto. Bicho selvagem carrega um zero, como carrega os três zeros do
+   * equipamento — vale mais que manter dois pools separados.
+   */
+  readonly riqueza: Float32Array;
+  /**
+   * A que família a pessoa pertence, ou -1.
+   *
+   * Família é uma linhagem: filho herda a do pai ou da mãe. É por ela que a
+   * coroa passa — enquanto restar alguém da família real, o trono é dela.
+   */
+  readonly familia: Int16Array;
+  /**
+   * A que clã pertence, ou -1.
+   *
+   * Clã é o grupo social dentro do reino, com valores próprios. É a partir
+   * dele que gente do mesmo povo passa a discordar entre si — e é onde a
+   * rebelião nasce.
+   */
+  readonly cla: Int16Array;
+  /**
+   * Lealdade ao próprio reino, de 0 a 100.
+   *
+   * Cai com fome, imposto e governante de clã rival; sobe com prosperidade.
+   * Vila inteira com fidelidade no chão se rebela.
+   */
+  readonly fidelidade: Float32Array;
+  /**
+   * Os traços desta pessoa, um bit cada. Ver `src/dados/tracos.ts`.
+   *
+   * Zero para todo bicho do mapa e para boa parte da gente — e é o zero que
+   * torna o sistema barato: quem consulta sai na primeira linha sem tocar em
+   * tabela nenhuma.
+   */
+  readonly tracos: Uint32Array;
+  /**
+   * Reino estrangeiro que esta pessoa viu e ainda não contou a ninguém, ou -1.
+   *
+   * É a névoa diplomática em forma de campo: um reino não sabe que outro
+   * existe até que alguém dele **esbarre** no estrangeiro e **volte vivo** para
+   * contar. Enquanto o número está aqui, a notícia está andando pelo mapa
+   * dentro de uma pessoa — e morre com ela se ela não chegar em casa.
+   */
+  readonly noticia: Int16Array;
+  /**
+   * Quantas vezes este slot já foi reaproveitado.
+   *
+   * **Guardar um índice de criatura fora do pool é uma armadilha.** Quando a
+   * criatura morre, o índice volta para a lista de livres e a próxima que
+   * nascer ocupa o mesmo lugar — quem guardou o número passa a apontar para
+   * outra pessoa, viva, do mesmo reino, sem nenhum sinal de que trocou.
+   *
+   * Foi exatamente o que aconteceu com a coroa: o rei morria, um bebê nascia no
+   * slot dele, e `Reino.rei` continuava "válido" porque o slot estava vivo. O
+   * reino passava a ser governado por um recém-nascido sem família.
+   *
+   * Quem guarda uma referência guarda o par (índice, geração) e confere os dois
+   * com `mesmaPessoa`. A geração só cresce, nunca é reaproveitada.
+   */
+  readonly geracao: Uint32Array;
+
   private livres: Int32Array;
   private qtdLivres = 0;
   /** Maior índice já usado + 1. Os laços varrem só até aqui. */
@@ -132,6 +197,13 @@ export class Criaturas {
     this.arma = new Uint8Array(capacidade);
     this.escudo = new Uint8Array(capacidade);
     this.armadura = new Uint8Array(capacidade);
+    this.riqueza = new Float32Array(capacidade);
+    this.familia = new Int16Array(capacidade);
+    this.cla = new Int16Array(capacidade);
+    this.fidelidade = new Float32Array(capacidade);
+    this.geracao = new Uint32Array(capacidade);
+    this.noticia = new Int16Array(capacidade).fill(-1);
+    this.tracos = new Uint32Array(capacidade);
     this.livres = new Int32Array(capacidade);
   }
 
@@ -180,6 +252,12 @@ export class Criaturas {
     this.arma[i] = 0;
     this.escudo[i] = 0;
     this.armadura[i] = 0;
+    this.riqueza[i] = 0;
+    this.familia[i] = -1;
+    this.cla[i] = -1;
+    this.fidelidade[i] = 70;
+    this.noticia[i] = -1;
+    this.tracos[i] = 0;
     this.idade[i] = 0;
     this.energia[i] = 100;
     this.fome[i] = 0;
@@ -188,6 +266,9 @@ export class Criaturas {
   }
 
   remover(i: number): void {
+    // O slot vai ser reaproveitado: quem guardou este índice lá fora tem
+    // de descobrir que a pessoa mudou (ver `geracao`).
+    this.geracao[i]++;
     if (!this.vivo[i]) return;
     this.vivo[i] = 0;
     this.alvo[i] = -1;

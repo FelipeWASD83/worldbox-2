@@ -7,6 +7,7 @@ import {
   recursoAceitaBioma,
 } from '../dados/recursos.js';
 import { ancoraDaConstrucao, derrubar } from './urbanismo.js';
+import { fatorDeAgua } from './geracao.js';
 import { ED } from '../dados/edificios.js';
 import { BAL } from './balanco.js';
 import { indiceDoMaterial, oQueFalta } from './coleta.js';
@@ -190,6 +191,16 @@ function rebrotarMata(mundo: Mundo, y0: number, y1: number): void {
       // justamente os lugares onde a mata precisava voltar depois do fogo.
       if (g.vegetacao[i] < BIOMA_FERTIL[g.bioma[i]] * 255 * 0.55) continue;
       if (!mundo.rng.chance(BAL.chanceRebrotar)) continue;
+      // A mata volta primeiro onde tem água, como na geração do mundo: a
+      // margem do rio fecha a clareira em pouco tempo e o interflúvio seco
+      // continua aberto por muito mais. Sem isto, uma floresta derrubada
+      // voltava distribuída por igual e a bacia hidrográfica que o mapa
+      // desenhava no começo da partida ia se apagando.
+      //
+      // A sondagem é local e só roda depois do sorteio acima, que já descarta
+      // duzentos e cinquenta candidatos para cada um que chega aqui.
+      const perto = fatorDeAgua(distanciaDaAguaDoce(mundo, x, y), 999);
+      if (!mundo.rng.chance(Math.min(1, perto / BAL.rebrotaJuntoDagua))) continue;
 
       // precisa de uma planta vizinha para dar a semente
       const n = g.vizinhos8(x, y, viz);
@@ -214,6 +225,38 @@ function rebrotarMata(mundo: Mundo, y0: number, y1: number): void {
     }
   }
 }
+
+/**
+ * A que distância está o rio ou lago mais próximo, olhando só o entorno.
+ *
+ * Anéis crescendo a partir do tile, com saída assim que acha: perto da água
+ * custa quase nada, e longe custa uma varredura pequena que só acontece para
+ * um punhado de tiles por tick. A alternativa seria guardar um mapa de
+ * distância no `Grid` e mantê-lo em dia a cada alagamento, meteoro e maremoto
+ * — caro e frágil para o que isto resolve.
+ */
+function distanciaDaAguaDoce(mundo: Mundo, cx: number, cy: number): number {
+  const g = mundo.grid;
+  for (let r = 1; r <= ALCANCE_DA_SONDAGEM; r++) {
+    const x0 = Math.max(0, cx - r);
+    const x1 = Math.min(g.largura - 1, cx + r);
+    const y0 = Math.max(0, cy - r);
+    const y1 = Math.min(g.altura - 1, cy + r);
+    for (let y = y0; y <= y1; y++) {
+      // só a borda do anel: o miolo já foi olhado na volta anterior
+      const naBorda = y === cy - r || y === cy + r;
+      const passo = naBorda ? 1 : Math.max(1, x1 - x0);
+      for (let x = x0; x <= x1; x += passo) {
+        const b = g.bioma[y * g.largura + x];
+        if (b === B.rio || b === B.lago) return r;
+      }
+    }
+  }
+  return ALCANCE_DA_SONDAGEM * 2;
+}
+
+/** Até onde a rebrota procura água doce em volta. */
+const ALCANCE_DA_SONDAGEM = 12;
 
 function crescerVegetacao(mundo: Mundo): void {
   const g = mundo.grid;

@@ -32,16 +32,35 @@ export type EventosDoJogo = {
     id: number; especie: number; x: number; y: number; causa: Causa; porEspecie: number;
   };
 
+  /** Nasceu alguém com um traço raríssimo — hoje, o imortal. */
+  'criatura:prodigio': { id: number; especie: number; traco: number };
+  /** Nasceu um mestiço. `pai` e `mae` são as espécies, não os indivíduos. */
+  'criatura:mesticou': { id: number; especie: number; pai: number; mae: number };
+
   'aldeia:fundada': { aldeia: number; reino: number; x: number; y: number };
   'aldeia:destruida': { aldeia: number; reino: number; x: number; y: number };
   'aldeia:cresceu': { aldeia: number; nivel: number };
   'aldeia:conquistada': { aldeia: number; de: number; para: number };
+  /** Alguém assumiu o comando de uma vila por ser o mais rico dela. */
+  'aldeia:governante': { aldeia: number; quem: number; antes: number };
+  /** Um rei foi coroado. `casa` é a linhagem dele. */
+  'reino:coroou': { reino: number; quem: number; casa: number; antes: number };
 
   'reino:fundado': { reino: number; nome: string };
   'reino:extinto': { reino: number; nome: string };
-  'reino:guerra': { a: number; b: number };
+  /**
+   * Dois reinos passaram a saber que o outro existe.
+   * `quem` é a pessoa que trouxe a notícia, ou -1 quando foi a mão do jogador.
+   */
+  'reino:conheceu': { a: number; b: number; quem: number };
+  /** `motivo` é o casus belli mais pesado no momento da declaração. */
+  'reino:guerra': { a: number; b: number; motivo: string };
   'reino:paz': { a: number; b: number };
   'reino:eraNova': { reino: number; era: number };
+  /** Um reino descobriu uma tecnologia. `tecnologia` é índice do registro. */
+  'reino:descobriu': { reino: number; tecnologia: number };
+  /** Uma parte do reino se separou. `vilas` é quantas foram junto. */
+  'reino:rebeliao': { novo: number; antigo: number; aldeia: number; vilas: number };
   'reino:alianca': { a: number; b: number };
   'reino:aliancaRompida': { a: number; b: number };
 

@@ -311,6 +311,14 @@ html, body {
   flex-wrap: wrap;
   align-content: flex-start;
   gap: 4px;
+  /*
+    E rola quando não cabe. Com quase duzentas ferramentas divididas em oito
+    abas, a aba mais cheia passa de trinta botões — numa janela estreita isso
+    são quatro fileiras, e sem rolagem as últimas ficavam cortadas fora da
+    gaveta sem nenhum sinal de que existiam.
+  */
+  overflow-y: auto;
+  max-height: 100%;
 }
 
 .poder {

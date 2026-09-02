@@ -90,6 +90,14 @@ export interface Especie extends Definicao {
    * Ausente = usa `BAL.lotacaoLocal`.
    */
   readonly lotacaoMax?: number;
+  /**
+   * Os dois povos que fizeram este, quando ele é mestiço.
+   *
+   * Ausente na esmagadora maioria das espécies. Existir aqui é o que separa um
+   * povo que sempre existiu de um que nasceu do encontro de dois — e é por ele
+   * que a fundação de mundo e a migração sabem quem não semear.
+   */
+  readonly hibrido?: readonly [string, string];
   /** Só para civilizados: dados do povo. */
   readonly povo?: {
     /** Cor do reino no mapa político. */
@@ -102,6 +110,22 @@ export interface Especie extends Definicao {
     readonly marcial: number;
     /** Peso de escolher guerra em vez de paz. */
     readonly beligerancia: number;
+    /**
+     * Quanto este povo estranha quem não é dele, de 0 a 1.
+     *
+     * Não é agressividade: um povo pode ser xenófobo e pacífico (fecha a
+     * fronteira e não negocia) ou aberto e violento (guerreia por terra, não
+     * por sangue). São coisas diferentes e por isso são dois números.
+     */
+    readonly xenofobia: number;
+    /**
+     * Povos com quem a inimizade é antiga, por id de espécie.
+     *
+     * Some ao estranhamento comum. Basta um lado listar o outro para os dois
+     * sentirem: ódio de vizinho não precisa ser recíproco para estragar a
+     * relação.
+     */
+    readonly odeia?: readonly string[];
   };
 }
 
@@ -115,7 +139,10 @@ especies.registrarTodos([
     vidaMax: 100, dano: 12, visao: 14, dieta: 'onivoro', presas: ['coelho', 'veado', 'ovelha', 'javali', 'peixe'],
     medoDe: [], agressividade: 0.35, longevidade: [9000, 15000], esperaFilho: 1400, ninhada: [1, 2],
     biomas: ['planicie', 'floresta', 'savana', 'praia'], frequencia: 1, lotacaoMax: 30,
-    povo: { corReino: 0x4a7ec8, prefereBiomas: ['planicie', 'savana', 'praia'], natalidade: 1.15, marcial: 1, beligerancia: 0.5 },
+    povo: {
+      corReino: 0x4a7ec8, prefereBiomas: ['planicie', 'savana', 'praia'],
+      natalidade: 1.15, marcial: 1, beligerancia: 0.5, xenofobia: 0.35, odeia: ['orc'],
+    },
   },
   {
     id: 'elfo', nome: 'elfo', plural: 'elfos', categoria: 'civilizado', inteligente: true, cerebro: 'inteligente',
@@ -123,7 +150,10 @@ especies.registrarTodos([
     vidaMax: 90, dano: 14, visao: 18, dieta: 'herbivoro', presas: ['coelho', 'veado'],
     medoDe: [], agressividade: 0.25, longevidade: [16000, 26000], esperaFilho: 1700, ninhada: [1, 2],
     biomas: ['floresta', 'selva'], frequencia: 1, lotacaoMax: 30,
-    povo: { corReino: 0x4fbf72, prefereBiomas: ['floresta', 'selva'], natalidade: 0.95, marcial: 1.05, beligerancia: 0.3 },
+    povo: {
+      corReino: 0x4fbf72, prefereBiomas: ['floresta', 'selva'],
+      natalidade: 0.95, marcial: 1.05, beligerancia: 0.3, xenofobia: 0.55, odeia: ['orc', 'anao'],
+    },
   },
   {
     id: 'anao', nome: 'anão', plural: 'anões', categoria: 'civilizado', inteligente: true, cerebro: 'inteligente',
@@ -131,7 +161,10 @@ especies.registrarTodos([
     vidaMax: 130, dano: 16, visao: 11, dieta: 'onivoro', presas: ['coelho', 'javali'],
     medoDe: [], agressividade: 0.4, longevidade: [12000, 20000], esperaFilho: 2000, ninhada: [1, 2],
     biomas: ['montanha', 'taiga', 'tundra'], frequencia: 1, lotacaoMax: 30,
-    povo: { corReino: 0xd2a24c, prefereBiomas: ['montanha', 'taiga', 'tundra'], natalidade: 0.9, marcial: 1.25, beligerancia: 0.45 },
+    povo: {
+      corReino: 0xd2a24c, prefereBiomas: ['montanha', 'taiga', 'tundra'],
+      natalidade: 0.9, marcial: 1.25, beligerancia: 0.45, xenofobia: 0.5, odeia: ['orc', 'elfo'],
+    },
   },
   {
     id: 'orc', nome: 'orc', plural: 'orcs', categoria: 'civilizado', inteligente: true, cerebro: 'inteligente',
@@ -139,7 +172,11 @@ especies.registrarTodos([
     vidaMax: 145, dano: 20, visao: 12, dieta: 'carnivoro', presas: ['coelho', 'veado', 'ovelha', 'javali', 'humano', 'elfo', 'anao'],
     medoDe: [], agressividade: 0.85, longevidade: [7000, 12000], esperaFilho: 1100, ninhada: [1, 3],
     biomas: ['savana', 'pantano', 'deserto', 'selva'], frequencia: 1, lotacaoMax: 30,
-    povo: { corReino: 0xc4553f, prefereBiomas: ['savana', 'pantano', 'selva'], natalidade: 1.15, marcial: 1.18, beligerancia: 0.9 },
+    povo: {
+      corReino: 0xc4553f, prefereBiomas: ['savana', 'pantano', 'selva'],
+      natalidade: 1.15, marcial: 1.18, beligerancia: 0.9, xenofobia: 0.85,
+      odeia: ['humano', 'elfo', 'anao'],
+    },
   },
 
   // -------------------------------------------------------------------- animais
@@ -265,6 +302,113 @@ especies.registrarTodos([
   },
 ]);
 
+
+// ------------------------------------------------------------------ híbridos
+/**
+ * Os povos mestiços, gerados aqui e não escritos à mão.
+ *
+ * Quando dois povos que não se detestam convivem, nasce gente dos dois. O
+ * híbrido é uma **espécie registrada**, com atributos interpolados dos pais, e
+ * não um conjunto de números guardado por criatura: as tabelas planas `ESP_*`
+ * que os laços quentes leem são indexadas por espécie, e dar atributo próprio a
+ * cada indivíduo custaria uma dúzia de arrays a mais em cento e trinta mil
+ * criaturas — para resolver uma coisa que seis entradas de registro resolvem.
+ *
+ * Quem pode cruzar com quem sai de `ODIO_POVOS`, que a diplomacia já montava.
+ * Com os números de hoje isso libera humano com elfo e humano com anão, e tranca
+ * elfo com anão e tudo o que envolve orc. Os quatro trancados continuam
+ * existindo no registro — a mão do jogador alcança o que a história não
+ * alcançou, e um mundo em que elfos e anões passem séculos em paz e comércio
+ * derruba o ódio abaixo do limiar sozinho.
+ *
+ * O mestiço não gera uma terceira espécie: filho de mestiço sai mestiço ou do
+ * povo do outro pai. Sem esse corte, oito gerações produziriam um registro de
+ * centenas de povos que ninguém consegue ler na tela.
+ */
+function nomesDoMestico(a: Especie, b: Especie): [string, string] {
+  // "meio-elfo" só existe em relação ao humano; entre os outros o português
+  // honesto é "mestiço de X e Y", e é o que a ficha mostra.
+  if (a.id === 'humano') return [`meio-${b.nome}`, `meios-${b.plural}`];
+  if (b.id === 'humano') return [`meio-${a.nome}`, `meios-${a.plural}`];
+  return [`mestiço de ${a.nome} e ${b.nome}`, `mestiços de ${a.nome} e ${b.nome}`];
+}
+
+function media(x: number, y: number): number {
+  return (x + y) / 2;
+}
+
+function misturarCorHex(a: number, b: number): number {
+  const canal = (d: number): number =>
+    Math.round((((a >> d) & 255) + ((b >> d) & 255)) / 2);
+  return (canal(16) << 16) | (canal(8) << 8) | canal(0);
+}
+
+{
+  const povos = especies.filtrar((e) => e.categoria === 'civilizado');
+  const mesticos: Especie[] = [];
+  for (let i = 0; i < povos.length; i++) {
+    for (let j = i + 1; j < povos.length; j++) {
+      const a = povos[i];
+      const b = povos[j];
+      const [nome, plural] = nomesDoMestico(a, b);
+      mesticos.push({
+        id: `${a.id}_${b.id}`,
+        nome,
+        plural,
+        categoria: 'civilizado',
+        inteligente: true,
+        cerebro: 'inteligente',
+        dominio: 'terra',
+        hibrido: [a.id, b.id],
+        cores: [
+          misturarCorHex(a.cores[0], b.cores[0]),
+          misturarCorHex(a.cores[1], b.cores[1]),
+          misturarCorHex(a.cores[2], b.cores[2]),
+        ],
+        porte: [media(a.porte[0], b.porte[0]), media(a.porte[1], b.porte[1])],
+        tamanho: Math.round(media(a.tamanho, b.tamanho)),
+        velocidade: media(a.velocidade, b.velocidade),
+        vidaMax: Math.round(media(a.vidaMax, b.vidaMax)),
+        dano: Math.round(media(a.dano, b.dano)),
+        visao: Math.round(media(a.visao, b.visao)),
+        dieta: 'onivoro',
+        // O mestiço não come gente. O orc caça humano, elfo e anão; herdar isso
+        // faria o meio-orc caçar a família da própria mãe.
+        presas: [...new Set([...a.presas, ...b.presas])].filter(
+          (p) => especies.talvez(p)?.categoria !== 'civilizado',
+        ),
+        medoDe: [...new Set([...a.medoDe, ...b.medoDe])],
+        agressividade: media(a.agressividade, b.agressividade),
+        longevidade: [
+          Math.round(media(a.longevidade[0], b.longevidade[0])),
+          Math.round(media(a.longevidade[1], b.longevidade[1])),
+        ],
+        esperaFilho: Math.round(media(a.esperaFilho, b.esperaFilho)),
+        ninhada: [1, 2],
+        biomas: [...new Set([...a.biomas, ...b.biomas])],
+        // zero: mestiço não é semeado na criação do mundo, ele **acontece**
+        frequencia: 0,
+        lotacaoMax: media(a.lotacaoMax ?? 16, b.lotacaoMax ?? 16),
+        povo: {
+          corReino: misturarCorHex(a.povo!.corReino, b.povo!.corReino),
+          prefereBiomas: [...new Set([
+            ...a.povo!.prefereBiomas, ...b.povo!.prefereBiomas,
+          ])],
+          natalidade: media(a.povo!.natalidade, b.povo!.natalidade),
+          marcial: media(a.povo!.marcial, b.povo!.marcial),
+          beligerancia: media(a.povo!.beligerancia, b.povo!.beligerancia),
+          // Metade de fora de nascença: o mestiço estranha menos o estrangeiro
+          // que qualquer um dos dois lados que o fizeram.
+          xenofobia: media(a.povo!.xenofobia, b.povo!.xenofobia) * 0.7,
+          // e só odeia quem os **dois** lados odiavam
+          odeia: (a.povo!.odeia ?? []).filter((id) => (b.povo!.odeia ?? []).includes(id)),
+        },
+      });
+    }
+  }
+  especies.registrarTodos(mesticos);
+}
+
 /** Atalhos de índice para os laços quentes. */
 export const E = Object.fromEntries(
   especies.todos().map((e) => [e.id, especies.indice(e.id)]),
@@ -301,6 +445,40 @@ export const ESP_HERBIVORO = new Uint8Array(N);
 export const ESP_NATALIDADE = new Float32Array(N).fill(1);
 export const ESP_MARCIAL = new Float32Array(N).fill(1);
 export const ESP_LOTACAO = new Float32Array(N);
+/** Quanto cada povo estranha estrangeiros, de 0 a 1. Zero para quem não é povo. */
+export const ESP_XENOFOBIA = new Float32Array(N);
+/** 1 para os povos mestiços. Ver o bloco de híbridos acima. */
+export const ESP_HIBRIDO = new Uint8Array(
+  especies.todos().map((e) => (e.hibrido ? 1 : 0)),
+);
+/**
+ * Os dois pais de cada mestiço, por índice de espécie: `PAIS_DO_HIBRIDO[i]`.
+ * `undefined` para quem não é mestiço.
+ */
+export const PAIS_DO_HIBRIDO: Array<[number, number] | undefined> = especies
+  .todos()
+  .map((e) => (e.hibrido
+    ? [especies.indice(e.hibrido[0]), especies.indice(e.hibrido[1])] as [number, number]
+    : undefined));
+/**
+ * Que mestiço nasce de cada par de povos: `MESTICO_DE[a * N + b]`, ou -1.
+ *
+ * Matriz plana e simétrica, montada uma vez, porque quem pergunta isto é o
+ * sistema de moradia — a cada casal, dentro de cada casa, a cada passada.
+ */
+export const MESTICO_DE = new Int16Array(N * N).fill(-1);
+/**
+ * Quanto dois povos se detestam, de 0 a 1: `ODIO_POVOS[a * N + b]`.
+ *
+ * Montada uma vez, na carga do módulo, a partir da xenofobia dos dois lados e
+ * das inimizades declaradas. Fica numa matriz plana e não numa função porque a
+ * diplomacia consulta isto para cada par de reinos a cada avaliação, e porque
+ * o número não muda durante a partida.
+ *
+ * A conta é simétrica de propósito: ódio entre povos é uma relação, não uma
+ * opinião de um lado só — se os orcs odeiam os elfos, os elfos vão descobrir.
+ */
+export const ODIO_POVOS = new Float32Array(N * N);
 /**
  * Quão rápido a fome sobe, por dieta.
  *
@@ -337,6 +515,7 @@ for (let i = 0; i < N; i++) {
   if (e.povo) {
     ESP_NATALIDADE[i] = e.povo.natalidade;
     ESP_MARCIAL[i] = e.povo.marcial;
+    ESP_XENOFOBIA[i] = e.povo.xenofobia;
   }
   for (const p of e.presas) {
     const j = especies.talvez(p);
@@ -348,6 +527,31 @@ for (let i = 0; i < N; i++) {
   }
 }
 
+// A matriz de ódio precisa de todos os povos já registrados: é a última coisa
+// montada, depois de `ESP_XENOFOBIA` estar preenchida.
+for (const a of especies.todos()) {
+  if (!a.povo) continue;
+  const ia = especies.indice(a.id);
+  for (const b of especies.todos()) {
+    if (!b.povo || a.id === b.id) continue;
+    const ib = especies.indice(b.id);
+    // o estranhamento comum é a média da xenofobia dos dois
+    let odio = ((a.povo.xenofobia + b.povo.xenofobia) / 2) * 0.55;
+    // e a inimizade antiga soma, valendo dos dois lados mesmo declarada só por um
+    if (a.povo.odeia?.includes(b.id) || b.povo.odeia?.includes(a.id)) odio += 0.45;
+    ODIO_POVOS[ia * N + ib] = Math.min(1, odio);
+  }
+}
+
+// Quem nasce de quem, preenchido depois de todas as espécies estarem no
+// registro. Simétrico: a ordem dos pais não muda o filho.
+for (let i = 0; i < N; i++) {
+  const pais = PAIS_DO_HIBRIDO[i];
+  if (!pais) continue;
+  MESTICO_DE[pais[0] * N + pais[1]] = i;
+  MESTICO_DE[pais[1] * N + pais[0]] = i;
+}
+
 export const TOTAL_ESPECIES = N;
 
 /** Espécies que o povoamento inicial usa, com os pesos declarados. */
@@ -357,4 +561,16 @@ export const ESPECIES_SELVAGENS = especies
 
 export const ESPECIES_CIVILIZADAS = especies
   .filtrar((e) => e.categoria === 'civilizado')
+  .map((e) => especies.indice(e.id));
+
+/**
+ * Os povos que o mundo semeia sozinho — os civilizados **menos os mestiços**.
+ *
+ * Um mundo não começa com meios-elfos: eles são o resultado de dois povos
+ * conviverem, e semeá-los na criação seria contar o fim da história antes do
+ * começo. A mão do jogador continua alcançando todos, que é o que a lista
+ * completa serve.
+ */
+export const ESPECIES_FUNDADORAS = especies
+  .filtrar((e) => e.categoria === 'civilizado' && !e.hibrido)
   .map((e) => especies.indice(e.id));

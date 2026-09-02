@@ -1,10 +1,12 @@
 import type { Mundo } from '../core/mundo.js';
 import { BIOMA_AGUA, BIOMA_COR, biomas } from '../dados/biomas.js';
 import { REC_SPRITE } from '../dados/recursos.js';
-import { ED, ED_OCUPA, ED_SPRITE } from '../dados/edificios.js';
+import {
+  ED, ED_OCUPA, ED_SPRITE, especieDoAcabamento, materialDoAcabamento,
+} from '../dados/edificios.js';
 import type { Camera } from './camera.js';
 import {
-  gerarSpritesDeEdificio, gerarSpritesDeRecurso, MARGEM_TILES, PX_TILE, type BancoDeMapa,
+  gerarSpritesDeRecurso, spritesDeEdificio, MARGEM_TILES, PX_TILE, type BancoDeMapa,
 } from './spritesMapa.js';
 
 /**
@@ -42,6 +44,27 @@ export const ZOOM_DETALHE = 3.5;
  * em volta de cada ilha e o mapa fica sujo. É um efeito de chegar perto.
  */
 const ZOOM_ONDAS = 7;
+/** A cada quantos ticks o mapa político é recontado. */
+const INTERVALO_BLOCOS = 240;
+/**
+ * Lado do bloco do mapa político, em tiles.
+ *
+ * É **separado** do lado do pedaço de chão: aquele é tamanho de cache de
+ * desenho e tem motivo de performance para ser 16; este é resolução de
+ * fronteira e tem motivo estético para ser pequeno. Enquanto os dois eram o
+ * mesmo número, o território saía em degraus de dezesseis tiles — uma vila
+ * inteira cabia num quadrado só, e a divisa entre dois reinos parecia um
+ * tabuleiro em vez de uma linha.
+ */
+const LADO_BLOCO = 6;
+/**
+ * Quantos tiles de um dono um bloco precisa ter para ser pintado como dele.
+ *
+ * Um oitavo do bloco. Serve para um punhado de tiles perdidos — um caçador que
+ * fincou bandeira longe, uma ponta de território que sobrou — não pintarem um
+ * quadrado inteiro no mapa político.
+ */
+const VOTOS_PARA_O_BLOCO = Math.max(2, Math.round((LADO_BLOCO * LADO_BLOCO) / 8));
 /**
  * As cores de flor que salpicam o campo fértil.
  *
@@ -71,7 +94,13 @@ export class CamadaTiles {
   private quadro = 0;
   private paletas: Uint32Array[] = [];
   private spritesRecurso: BancoDeMapa;
-  private spritesEdificio: BancoDeMapa;
+  /**
+   * Os desenhos de prédio já gerados, por (tipo, material, povo).
+   *
+   * Preenchido sob demanda: a combinação completa passaria de mil imagens e um
+   * mundo real usa umas trinta. Ver `spritesDeEdificio`.
+   */
+  private spritesEdificio = new Map<number, HTMLCanvasElement[]>();
   /** Quantos objetos foram desenhados no último quadro. */
   objetosDesenhados = 0;
   /**
@@ -81,11 +110,17 @@ export class CamadaTiles {
    * afastado obedecia a ela, e desligar "territórios" não mudava nada de perto.
    */
   mostrarTerritorio = true;
+  /** De que reino é cada bloco do mapa político, ou -1. Ver `desenharTerritorio`. */
+  private donoDoBloco = new Int16Array(0);
+  /** Tick da última recontagem dos blocos. */
+  private blocosEm = -1;
 
   constructor(private mundo: Mundo) {
     this.montarPaletas();
     this.spritesRecurso = gerarSpritesDeRecurso();
-    this.spritesEdificio = gerarSpritesDeEdificio();
+    // o banco de prédios é preenchido sob demanda — ver `bancoDeEdificio`
+    this.spritesEdificio.clear();
+
   }
 
   trocarMundo(mundo: Mundo): void {
@@ -162,6 +197,121 @@ export class CamadaTiles {
 
     this.limparCache();
     return faltando;
+  }
+
+  /** Os três desenhos daquele prédio naquele material e por aquele povo. */
+  private bancoDeEdificio(tipo: number, material: number, especie: number): HTMLCanvasElement[] {
+    const chave = (tipo * 8 + material) * 32 + especie;
+    let banco = this.spritesEdificio.get(chave);
+    if (!banco) {
+      banco = spritesDeEdificio(tipo, material, especie);
+      this.spritesEdificio.set(chave, banco);
+    }
+    return banco;
+  }
+
+  /**
+   * O território dos reinos, em blocos do tamanho do pedaço de chão.
+   *
+   * Antes cada tile era tingido e contornado por conta própria, e a fronteira
+   * saía serrilhada tile a tile — um recorte irregular que dizia mais sobre o
+   * algoritmo de expansão do que sobre política. Aqui o mapa político tem a
+   * resolução de um **bloco de poucos tiles**: o bloco pertence a quem tem mais tiles
+   * dentro dele, e a divisa é o contorno dos blocos.
+   *
+   * A perda de precisão é o ponto. Fronteira é uma linha grossa num mapa, não o
+   * cadastro de cada metro quadrado — e de longe é isto que se lê como "até
+   * aqui é meu".
+   *
+   * Fica fora do cache de chão porque depende dos blocos vizinhos, e um pedaço
+   * do cache não sabe nada sobre o vizinho dele.
+   */
+  desenharTerritorio(ctx: CanvasRenderingContext2D, cam: Camera, pintar = true): void {
+    if (!this.mostrarTerritorio) return;
+    const g = this.mundo.grid;
+    const area = cam.area();
+    const blocosX = Math.ceil(g.largura / LADO_BLOCO);
+    const blocosY = Math.ceil(g.altura / LADO_BLOCO);
+
+    if (this.donoDoBloco.length !== blocosX * blocosY) {
+      this.donoDoBloco = new Int16Array(blocosX * blocosY);
+      this.blocosEm = -1;
+    }
+    // recontar o mapa inteiro a cada quadro seria absurdo; a fronteira anda
+    // devagar e uma atualização a cada poucos segundos basta
+    if (this.mundo.tick - this.blocosEm > INTERVALO_BLOCOS || this.blocosEm < 0) {
+      this.recontarBlocos(blocosX, blocosY);
+      this.blocosEm = this.mundo.tick;
+    }
+
+    const b0x = Math.max(0, Math.floor(area.x0 / LADO_BLOCO));
+    const b1x = Math.min(blocosX - 1, Math.floor(area.x1 / LADO_BLOCO));
+    const b0y = Math.max(0, Math.floor(area.y0 / LADO_BLOCO));
+    const b1y = Math.min(blocosY - 1, Math.floor(area.y1 / LADO_BLOCO));
+    const lado = LADO_BLOCO * cam.escala;
+    const grossura = Math.max(1.5, cam.escala * 0.34);
+
+    for (let by = b0y; by <= b1y; by++) {
+      for (let bx = b0x; bx <= b1x; bx++) {
+        const dono = this.donoDoBloco[by * blocosX + bx];
+        if (dono < 0) continue;
+        const reino = this.mundo.reinos[dono];
+        if (!reino?.ativo) continue;
+
+        const vr = (reino.cor >> 16) & 255;
+        const vg = (reino.cor >> 8) & 255;
+        const vb = reino.cor & 255;
+        const px = cam.mundoParaTelaX(bx * LADO_BLOCO);
+        const py = cam.mundoParaTelaY(by * LADO_BLOCO);
+
+        if (pintar) {
+          ctx.fillStyle = `rgba(${vr},${vg},${vb},0.12)`;
+          ctx.fillRect(px, py, lado, lado);
+        }
+
+        // a divisa só aparece onde o bloco vizinho é de outro dono
+        ctx.fillStyle = `rgba(${vr},${vg},${vb},0.9)`;
+        const norte = by > 0 ? this.donoDoBloco[(by - 1) * blocosX + bx] : -1;
+        const sul = by < blocosY - 1 ? this.donoDoBloco[(by + 1) * blocosX + bx] : -1;
+        const oeste = bx > 0 ? this.donoDoBloco[by * blocosX + bx - 1] : -1;
+        const leste = bx < blocosX - 1 ? this.donoDoBloco[by * blocosX + bx + 1] : -1;
+        if (norte !== dono) ctx.fillRect(px, py, lado, grossura);
+        if (sul !== dono) ctx.fillRect(px, py + lado - grossura, lado, grossura);
+        if (oeste !== dono) ctx.fillRect(px, py, grossura, lado);
+        if (leste !== dono) ctx.fillRect(px + lado - grossura, py, grossura, lado);
+      }
+    }
+  }
+
+  /** De quem é cada bloco: o reino com mais tiles dentro dele. */
+  private recontarBlocos(blocosX: number, blocosY: number): void {
+    const g = this.mundo.grid;
+    const votos = new Map<number, number>();
+
+    for (let by = 0; by < blocosY; by++) {
+      for (let bx = 0; bx < blocosX; bx++) {
+        votos.clear();
+        const x1 = Math.min(g.largura, (bx + 1) * LADO_BLOCO);
+        const y1 = Math.min(g.altura, (by + 1) * LADO_BLOCO);
+        for (let y = by * LADO_BLOCO; y < y1; y++) {
+          for (let x = bx * LADO_BLOCO; x < x1; x++) {
+            const r = g.territorio[y * g.largura + x];
+            if (r < 0) continue;
+            votos.set(r, (votos.get(r) ?? 0) + 1);
+          }
+        }
+        let dono = -1;
+        let maior = 0;
+        for (const [r, n] of votos) {
+          if (n > maior) {
+            maior = n;
+            dono = r;
+          }
+        }
+        // um punhado de tiles perdidos não pinta um bloco inteiro
+        this.donoDoBloco[by * blocosX + bx] = maior >= VOTOS_PARA_O_BLOCO ? dono : -1;
+      }
+    }
   }
 
   /**
@@ -275,7 +425,12 @@ export class CamadaTiles {
         const c = g.construcao[i];
         if (c !== 0 && c - 1 !== ED.fazenda) {
           const tipo = c - 1;
-          const banco = this.spritesEdificio[tipo];
+          const acabamento = g.acabamento[i];
+          const banco = this.bancoDeEdificio(
+            tipo,
+            materialDoAcabamento(acabamento),
+            especieDoAcabamento(acabamento),
+          );
           const img = banco[g.matiz[i] % banco.length];
           const folga = MARGEM_TILES * 2 * cam.escala;
           const l = ED_SPRITE[tipo * 2] * cam.escala;
@@ -514,44 +669,6 @@ export class CamadaTiles {
         ctx.fillRect(sx, dy + 1, 2, PX - 2);
         ctx.fillStyle = 'rgba(0,0,0,0.16)';
         ctx.fillRect(sx + 2, dy + 1, 1, PX - 2);
-      }
-    }
-
-    // ------------------------------------------------------ o chão do reino
-    //
-    // Território é **fronteira**, não mancha. O tinto sozinho dizia muito pouco:
-    // de longe virava uma sujeira colorida sobre o mapa, e de perto não dava
-    // para saber onde um reino acabava e o outro começava. O que se lê é a
-    // linha — por isso o preenchimento ficou mais fraco ainda e a divisa ganhou
-    // uma faixa grossa, na cor de quem manda ali.
-    const reinoAqui = this.mostrarTerritorio ? g.territorio[i] : -1;
-    if (reinoAqui >= 0) {
-      const reino = this.mundo.reinos[reinoAqui];
-      if (reino?.ativo) {
-        const vr = (reino.cor >> 16) & 255;
-        const vg = (reino.cor >> 8) & 255;
-        const vb = reino.cor & 255;
-
-        if (g.construcao[i] === 0 && !ehLavoura(g, i)) {
-          ctx.fillStyle = `rgba(${vr},${vg},${vb},0.1)`;
-          ctx.fillRect(dx, dy, PX, PX);
-        }
-
-        // A divisa: onde o vizinho é de outro reino (ou de ninguém), uma faixa
-        // sólida na borda. Sai de graça no cache, junto com o resto do chão.
-        ctx.fillStyle = `rgba(${vr},${vg},${vb},0.85)`;
-        const largura = g.largura;
-        const norte = i >= largura ? g.territorio[i - largura] : -1;
-        const sul = i + largura < g.total ? g.territorio[i + largura] : -1;
-        const naEsquerda = i % largura === 0;
-        const naDireita = i % largura === largura - 1;
-        const oeste = naEsquerda ? -1 : g.territorio[i - 1];
-        const leste = naDireita ? -1 : g.territorio[i + 1];
-        const F = 3;
-        if (norte !== reinoAqui) ctx.fillRect(dx, dy, PX, F);
-        if (sul !== reinoAqui) ctx.fillRect(dx, dy + PX - F, PX, F);
-        if (oeste !== reinoAqui) ctx.fillRect(dx, dy, F, PX);
-        if (leste !== reinoAqui) ctx.fillRect(dx + PX - F, dy, F, PX);
       }
     }
 

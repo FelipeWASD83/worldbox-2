@@ -1,8 +1,10 @@
 import type { Sistema } from '../core/sistemas.js';
 import type { Aldeia, Mundo } from '../core/mundo.js';
 import { Estado } from '../core/criaturas.js';
-import { ED_MORADIA, ED_OCUPA } from '../dados/edificios.js';
-import { ESP_ESPERA_FILHO, especies } from '../dados/especies.js';
+import { ED_MORADIA, ED_OCUPA, MAT_FATOR, materialDoAcabamento } from '../dados/edificios.js';
+import { ESP_ESPERA_FILHO, ESP_HIBRIDO, especies } from '../dados/especies.js';
+import { Campo, MASCARA_RARA } from '../dados/tracos.js';
+import { especieDoFilho, fator, podemCruzar, tracosDoFilho, vidaMaxima } from './genetica.js';
 import { BAL } from './balanco.js';
 
 /**
@@ -65,15 +67,29 @@ export const sistemaMoradia: Sistema = {
   },
 };
 
-/** Dois adultos do mesmo povo dentro da mesma casa: nasce alguém. */
+/**
+ * Dois adultos dentro da mesma casa: nasce alguém.
+ *
+ * **Não precisam ser do mesmo povo.** Se os dois povos se toleram — o ódio
+ * entre eles está abaixo de `BAL.odioParaCruzar` —, o filho é um mestiço; ver
+ * `src/sim/genetica.ts`. Com a tabela de hoje isso acontece entre humano e
+ * elfo e entre humano e anão, e não acontece entre elfo e anão nem com orc
+ * nenhum. Não é uma regra escrita à parte: é a mesma tabela de ódio que decide
+ * se dois reinos vão à guerra.
+ *
+ * A ordem em que a casa é varrida importa desde que a beleza existe: quem é
+ * belo é considerado antes, e quem é feio fica para o fim da fila. É o único
+ * lugar em que um traço mexe em **quem** faz alguma coisa, e não em quanto.
+ */
 function resolverCasal(mundo: Mundo, casa: number, dentro: number[]): void {
   const c = mundo.criaturas;
+  dentro.sort((x, y) => fator(c.tracos[y], Campo.beleza) - fator(c.tracos[x], Campo.beleza));
   for (let a = 0; a < dentro.length; a++) {
     const i = dentro[a];
     if (c.esperaFilho[i] > 0) continue;
     for (let b = a + 1; b < dentro.length; b++) {
       const j = dentro[b];
-      if (c.especie[j] !== c.especie[i]) continue;
+      if (!podemCruzar(c.especie[i], c.especie[j])) continue;
       if (c.esperaFilho[j] > 0) continue;
 
       const aldeiaId = c.aldeia[i];
@@ -82,14 +98,18 @@ function resolverCasal(mundo: Mundo, casa: number, dentro: number[]): void {
       if (aldeia.populacao >= aldeia.capacidade) return;
       if (mundo.criaturas.quantidade >= mundo.criaturas.capacidade * 0.95) return;
 
+      // De que povo sai o filho. Dos mesmos pais só sai um povo, mas a conta é
+      // refeita por filhote porque de mestiço com puro cada filho pode puxar
+      // um lado diferente.
       const esp = c.especie[i];
       const def = especies.porIndice(esp);
       const quantos = mundo.rng.intEntre(def.ninhada[0], def.ninhada[1]);
       for (let k = 0; k < quantos; k++) {
+        const espFilho = especieDoFilho(mundo, c.especie[i], c.especie[j]);
         const x = casa % mundo.grid.largura;
         const y = (casa / mundo.grid.largura) | 0;
         const filho = mundo.nascer(
-          esp,
+          espFilho,
           x + mundo.rng.entre(0, 1.5),
           y + mundo.rng.entre(0, 1.5),
           0,
@@ -98,12 +118,55 @@ function resolverCasal(mundo: Mundo, casa: number, dentro: number[]): void {
         if (filho < 0) break;
         c.aldeia[filho] = aldeiaId;
         c.reino[filho] = c.reino[i];
+        // A linhagem passa aqui, e é o que faz a sucessão do trono existir:
+        // filho de rei nasce da casa real e, no dia em que o pai morrer, é ele
+        // que herda. Se um dos pais não tem família registrada, o filho leva a
+        // do outro; se nenhum tem, funda uma.
+        const casaPai = c.familia[i] >= 0 ? c.familia[i] : c.familia[j];
+        c.familia[filho] = casaPai >= 0 ? casaPai : mundo.novaFamilia();
+        if (casaPai < 0) {
+          c.familia[i] = c.familia[filho];
+          c.familia[j] = c.familia[filho];
+        }
+        // clã e lealdade também vêm de casa
+        c.cla[filho] = c.cla[i] >= 0 ? c.cla[i] : c.cla[j];
+        c.fidelidade[filho] = (c.fidelidade[i] + c.fidelidade[j]) / 2;
+        // E os traços, que é o que faz uma linhagem ter cara. `nascer` já pôs
+        // um sorteio sem pais; aqui ele é substituído pela herança de verdade,
+        // e vida, longevidade e espera são refeitas por cima dela.
+        c.tracos[filho] = tracosDoFilho(mundo, espFilho, i, j);
+        // Um traço raro é notícia. Hoje só o imortal passa por aqui, e é ele
+        // que a crônica registra — o resto do mundo vai conviver com aquilo por
+        // muito tempo.
+        const raro = c.tracos[filho] & MASCARA_RARA;
+        if (raro !== 0) {
+          mundo.eventos.emitir('criatura:prodigio', {
+            id: filho,
+            especie: espFilho,
+            traco: 31 - Math.clz32(raro),
+          });
+        }
+        c.vida[filho] = vidaMaxima(c, filho);
+        c.longevidade[filho] *= fator(c.tracos[filho], Campo.longevidade);
+        c.esperaFilho[filho] *= fator(c.tracos[filho], Campo.espera);
+        // Só quando o filho é **ele mesmo** um povo mestiço. Filho puro de um
+        // casal com um mestiço dentro não é mestiçagem: é a linhagem voltando
+        // para um dos lados, e anunciar isso encheria a crônica de "nasceu o
+        // primeiro anão" no meio de um mundo cheio de anões.
+        if (ESP_HIBRIDO[espFilho] === 1) {
+          mundo.eventos.emitir('criatura:mesticou', {
+            id: filho,
+            especie: espFilho,
+            pai: c.especie[i],
+            mae: c.especie[j],
+          });
+        }
         aldeia.populacao++;
       }
 
-      const espera = ESP_ESPERA_FILHO[esp];
-      c.esperaFilho[i] = espera;
-      c.esperaFilho[j] = espera;
+      // A espera do próximo filho é de cada um: quem é fértil volta antes.
+      c.esperaFilho[i] = ESP_ESPERA_FILHO[c.especie[i]] * fator(c.tracos[i], Campo.espera);
+      c.esperaFilho[j] = ESP_ESPERA_FILHO[c.especie[j]] * fator(c.tracos[j], Campo.espera);
       sair(mundo, i);
       sair(mundo, j);
       return;
@@ -150,8 +213,12 @@ export function entrar(mundo: Mundo, i: number, casa: number): boolean {
 export function vagasNaCasa(mundo: Mundo, casa: number): number {
   const tipo = mundo.grid.construcao[casa] - 1;
   if (tipo < 0) return 0;
-  const cabe = ED_MORADIA[tipo];
-  if (cabe === 0) return 0;
+  const bruto = ED_MORADIA[tipo];
+  if (bruto === 0) return 0;
+  // quantos dormem dentro também depende do material: choça de palha é menor
+  const cabe = Math.max(1, Math.round(
+    bruto * MAT_FATOR[materialDoAcabamento(mundo.grid.acabamento[casa])],
+  ));
   return cabe - (ocupantes.get(casa) ?? 0);
 }
 

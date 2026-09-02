@@ -1,4 +1,5 @@
 import { Registro, type Definicao } from '../core/registro.js';
+import { tecnologias } from './tecnologias.js';
 import type { Estoque } from './materiais.js';
 
 /**
@@ -108,3 +109,18 @@ export function porEncaixe(encaixe: Encaixe): Equipamento[] {
     .filtrar((e) => e.encaixe === encaixe)
     .sort((a, b) => a.dano + a.defesa - (b.dano + b.defesa));
 }
+
+/**
+ * Que tecnologia libera cada peça, por índice — ou -1 quando ela não depende de
+ * nenhuma. Montada do registro de tecnologias, pelo mesmo motivo de
+ * `ED_TECNOLOGIA`: uma lista só para manter em dia.
+ */
+export const EQ_TECNOLOGIA = (() => {
+  const a = new Int16Array(equipamentos.tamanho).fill(-1);
+  for (const t of tecnologias.todos()) {
+    for (const id of t.liberaEquipamentos ?? []) {
+      if (equipamentos.talvez(id)) a[equipamentos.indice(id)] = tecnologias.indice(t.id);
+    }
+  }
+  return a;
+})();

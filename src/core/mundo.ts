@@ -6,16 +6,23 @@ import { Barramento, type Causa } from './eventos.js';
 import { Rng } from './rng.js';
 import { Pipeline } from './sistemas.js';
 import {
-  ESP_VIDA, ESP_ESPERA_FILHO, ESPECIES_SELVAGENS, TOTAL_ESPECIES, especies,
+  ESP_ESPERA_FILHO, ESPECIES_SELVAGENS, TOTAL_ESPECIES, especies,
 } from '../dados/especies.js';
-import { ED, ED_ABRIGA, ED_MORADIA, ED_NATURAL, ED_OCUPA, edificios } from '../dados/edificios.js';
+import {
+  ED, ED_ABRIGA, ED_MORADIA, ED_NATURAL, ED_OCUPA, MAT_FATOR, edificios,
+  materialDoAcabamento,
+} from '../dados/edificios.js';
 import { B } from '../dados/biomas.js';
 import { alcanceDaAldeia } from '../sim/urbanismo.js';
+import { nomeDeCla } from '../dados/nomes.js';
 import { BAL } from '../sim/balanco.js';
 import type { BombaDeLava } from '../sim/vulcoes.js';
 import type { Nuvem } from '../sim/clima.js';
 import type { Barco } from '../sim/barcos.js';
 import { estoqueVazio, type Estoque } from '../dados/materiais.js';
+import { TEC_INICIAIS } from '../dados/tecnologias.js';
+import { Campo } from '../dados/tracos.js';
+import { fator, tracosDoFilho, vidaMaxima } from '../sim/genetica.js';
 
 export interface TamanhoMapa {
   readonly id: string;
@@ -91,6 +98,30 @@ export interface Aldeia {
    */
   moinhosIdx: number[];
   /**
+   * O morador que manda na vila: o mais rico dela, ou -1.
+   *
+   * É índice de criatura e pode morrer a qualquer momento — quem lê confere
+   * `vivo` antes de usar (ver `src/sim/politica.ts`).
+   */
+  governante: number;
+  /** Geração do slot do governante, para saber se ainda é a mesma pessoa. */
+  governanteGer: number;
+  /** Fração da riqueza dos moradores recolhida por vez, de 0 a 1. */
+  imposto: number;
+  /**
+   * Os tiles na borda do território, esperando serem tomados.
+   *
+   * O território cresce **por aqui**, e não preenchendo um círculo: a vila
+   * empurra a fronteira para os vizinhos do que já domina, e a forma que sai é
+   * a que a geografia permite — uma língua que sobe o vale, um contorno que
+   * desvia da serra, uma faixa que acompanha a costa. Círculo não existe na
+   * natureza e não existia motivo para existir aqui.
+   *
+   * É uma fila de trabalho, não um estado: se ela esvaziar (a vila ficou
+   * cercada), `refazerFranja` a reconstrói a partir da borda atual.
+   */
+  franja: number[];
+  /**
    * Quantos tiles a aldeia domina agora, e quantos ela pode dominar.
    *
    * Uma vila tem tamanho máximo. Quando enche, o único jeito de o reino crescer
@@ -125,10 +156,42 @@ export interface Aldeia {
   bonusPedra: number;
 }
 
+function limitar01(v: number): number {
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
 /** Quantos tiles cabem numa aldeia daquele nível. */
 export function limiteDeTerritorio(nivel: number): number {
   const r = BAL.raioPorNivel[Math.min(nivel, BAL.raioPorNivel.length - 1)];
   return Math.round(Math.PI * r * r * 0.92);
+}
+
+/**
+ * Um clã: o grupo social dentro de um povo, com valores próprios.
+ *
+ * É o que faz gente do mesmo reino discordar entre si. Reino e espécie explicam
+ * por que dois povos brigam; clã explica por que **um** povo se parte em dois —
+ * e é daí que sai a rebelião.
+ *
+ * Os quatro valores vão de 0 a 1 e puxam comportamento de verdade, não são
+ * enfeite de inspetor: `marcialidade` decide quem pega em armas, `ganancia` e
+ * `submissao` decidem quanto imposto o clã aguenta antes de a lealdade cair, e
+ * `fechamento` decide o quanto ele se incomoda de ser governado por gente de
+ * outro clã.
+ */
+export interface Cla {
+  id: number;
+  nome: string;
+  especie: number;
+  /** 0..1 — quanto o clã valoriza a guerra. Puxa quem vira soldado. */
+  marcialidade: number;
+  /** 0..1 — quanto o clã valoriza acumular. Quanto maior, mais dói o imposto. */
+  ganancia: number;
+  /** 0..1 — quanto o clã aceita mandar e ser mandado. Baixo é clã rebelde. */
+  submissao: number;
+  /** 0..1 — quanto o clã estranha quem não é dele. */
+  fechamento: number;
+  fundadoEm: number;
 }
 
 /** Um reino: o agrupamento político de aldeias do mesmo povo. */
@@ -140,19 +203,93 @@ export interface Reino {
   especie: number;
   capital: number;
   aldeias: number[];
+  /**
+   * Os reinos de cuja existência este já sabe.
+   *
+   * **Nada de diplomacia acontece fora deste conjunto.** Não há relação, não há
+   * comércio, não há guerra e nem sequer atrito de fronteira com quem ainda não
+   * se conhece — dois impérios podem encostar território sem nunca terem
+   * trocado uma palavra, e é assim que fica até que alguém atravesse a divisa e
+   * volte vivo para contar. Ver `src/sim/contato.ts`.
+   */
+  conhecidos: Set<number>;
+  /**
+   * O que este reino tem a cobrar de cada outro: mortes, chão tomado, traição.
+   *
+   * Separado de `relacoes` de propósito. A relação oscila — um bom negócio
+   * levanta, um roçar de fronteira derruba —, mas mágoa não oscila: ela se
+   * acumula e só desce devagar com o tempo. É o que faz uma guerra antiga
+   * continuar pesando na decisão de começar a próxima, em vez de o mundo
+   * esquecer tudo assim que a paz é assinada.
+   */
+  rancor: Map<number, number>;
+  /**
+   * Em que tick a situação atual com cada reino começou.
+   *
+   * Serve para duas coisas ao mesmo tempo, e por isso é um mapa só: **em
+   * guerra**, mede há quanto tempo se briga, que é o que gera o desgaste que
+   * leva à paz; **em paz**, mede há quanto tempo a guerra acabou, que é o que
+   * impede o mundo de redeclarar a mesma guerra na avaliação seguinte.
+   *
+   * Sem isto a guerra virava estado permanente: o motivo que a começou continua
+   * lá enquanto ela dura — a fronteira continua se tocando, os mortos só
+   * aumentam o rancor —, e nenhuma paz saía a não ser por extermínio.
+   */
+  marcoDaGuerra: Map<number, number>;
   /** -100 (ódio) a +100 (aliança). */
   relacoes: Map<number, number>;
   guerras: Set<number>;
   /** Reinos com quem tem aliança firmada: comerciam e entram na guerra juntos. */
   aliancas: Set<number>;
-  /** 0 tribal · 1 aldeões · 2 reino · 3 império */
+  /**
+   * 0 tribal · 1 aldeias · 2 reino · 3 império.
+   *
+   * Deixou de ser calculada de população e território — que não queria dizer
+   * nada — e passou a ser **a era da tecnologia mais avançada que o reino
+   * domina**. Ver `src/sim/conhecimento.ts`.
+   */
   era: number;
+  /**
+   * Conhecimento acumulado, em pontos, e o que já foi descoberto com ele.
+   *
+   * Os pontos entram por população e, principalmente, pelos prédios que
+   * existiam sem função nenhuma até agora — biblioteca, prefeitura e templo.
+   * Saem quando uma descoberta é paga. `tecnologias` guarda índices do registro
+   * em `src/dados/tecnologias.ts`.
+   */
+  conhecimento: number;
+  tecnologias: Set<number>;
   fundadoEm: number;
   /** Somatório de população — recalculado no sistema de aldeias. */
   populacao: number;
   /** Somatório de tiles dominados por todas as aldeias do reino. */
   territorio: number;
+  /**
+   * O rei, como índice de criatura, ou -1 enquanto o trono estiver vago.
+   *
+   * Pode morrer a qualquer tick como qualquer um: quem lê confere `vivo`.
+   */
+  rei: number;
+  /** Geração do slot do rei, para saber se ainda é a mesma pessoa. */
+  reiGer: number;
+  /** A família que ocupa o trono. A coroa fica nela enquanto sobrar alguém. */
+  casaReal: number;
+  /** Ouro do reino, alimentado pelo imposto das vilas. */
+  tesouro: number;
 }
+
+/**
+ * Quanto de rancor cada ofensa deixa.
+ *
+ * Os dois primeiros são pequenos porque entram muitas vezes: uma guerra de
+ * fronteira mata dezenas ao longo dela. Trair uma aliança é um ato único e
+ * pesa como tal.
+ */
+export const RANCOR_POR_MORTE = 0.7;
+export const RANCOR_POR_TERRITORIO = 0.25;
+export const RANCOR_POR_TRAICAO = 18;
+/** Teto do rancor, para uma guerra longa não fixar dois povos em ódio eterno. */
+export const RANCOR_MAXIMO = 100;
 
 export interface Estatisticas {
   populacao: number;
@@ -214,6 +351,21 @@ export class Mundo {
   vulcoes: number[] = [];
   /** Bombas de lava no ar agora. */
   bombas: BombaDeLava[] = [];
+  /**
+   * Contador de linhagens e de clãs já criados.
+   *
+   * Família e clã não têm objeto próprio: são só um número que as criaturas
+   * carregam (`Criaturas.familia`, `Criaturas.cla`). O que uma família **é**
+   * está inteiramente em quem a carrega — quando o último morre, ela deixa de
+   * existir sem ninguém precisar apagar nada.
+   */
+  proximaFamilia = 0;
+  proximoCla = 0;
+  /**
+   * Os clãs do mundo, indexados pelo número que as criaturas carregam em
+   * `Criaturas.cla`. Ver `src/sim/cultura.ts`.
+   */
+  clas: Cla[] = [];
   /** As nuvens que atravessam o mundo agora. Ver `src/sim/clima.ts`. */
   nuvens: Nuvem[] = [];
   /** Os barcos no mar. Ver `src/sim/barcos.ts`. */
@@ -276,12 +428,18 @@ export class Mundo {
     c.especie[i] = especie;
     c.x[i] = x;
     c.y[i] = y;
-    c.vida[i] = ESP_VIDA[especie];
+    // Os traços vêm **antes** de vida, longevidade e espera, porque os três
+    // saem multiplicados por eles. Quem nasce de um casal recebe a herança logo
+    // depois, por cima deste sorteio — ver `src/sim/genetica.ts`.
+    c.tracos[i] = tracosDoFilho(this, especie, -1, -1);
+    c.vida[i] = vidaMaxima(c, i);
     c.fome[i] = this.rng.entre(0, 30);
     c.energia[i] = 100;
     c.idade[i] = idade;
-    c.longevidade[i] = this.rng.entre(def.longevidade[0], def.longevidade[1]);
-    c.esperaFilho[i] = ESP_ESPERA_FILHO[especie] * this.rng.entre(0.5, 1.2);
+    c.longevidade[i] = this.rng.entre(def.longevidade[0], def.longevidade[1])
+      * fator(c.tracos[i], Campo.longevidade);
+    c.esperaFilho[i] = ESP_ESPERA_FILHO[especie] * this.rng.entre(0.5, 1.2)
+      * fator(c.tracos[i], Campo.espera);
     c.estado[i] = Estado.Vagando;
     c.dir[i] = this.rng.int(2);
     this.eventos.emitir('criatura:nasceu', { id: i, especie, x, y, origem });
@@ -299,6 +457,14 @@ export class Mundo {
     if (aldeia >= 0 && this.aldeias[aldeia]?.ativa) {
       this.aldeias[aldeia].populacao = Math.max(0, this.aldeias[aldeia].populacao - 1);
       this.aldeias[aldeia].moral -= 1.5;
+    }
+    // Matar gente de outro reino deixa marca: é daqui que sai o rancor que pesa
+    // no casus belli da guerra seguinte. Só quando há um matador com bandeira —
+    // bicho comendo aldeão não é ato de Estado.
+    if (causa === 'combate' && porQuem >= 0 && c.vivo[porQuem]) {
+      const meu = c.reino[i];
+      const dele = c.reino[porQuem];
+      if (meu >= 0 && dele >= 0 && meu !== dele) this.acumularRancor(meu, dele, RANCOR_POR_MORTE);
     }
     c.abrigo[i] = -1;
     c.remover(i);
@@ -325,6 +491,10 @@ export class Mundo {
       capacidadeEstoque: 260,
       casasIdx: [],
       moinhosIdx: [],
+      governante: -1,
+      governanteGer: 0,
+      imposto: 0.05,
+      franja: [],
       tilesTerritorio: 0,
       limiteTerritorio: 0,
       predios: new Int32Array(edificios.tamanho),
@@ -350,31 +520,44 @@ export class Mundo {
     if (!a || !a.ativa) return;
     a.ativa = false;
     const g = this.grid;
-    // apaga construções e território daquela aldeia
-    const alcance = alcanceDaAldeia(a);
-    const x0 = Math.max(0, a.x - alcance);
-    const x1 = Math.min(g.largura - 1, a.x + alcance);
-    const y0 = Math.max(0, a.y - alcance);
-    const y1 = Math.min(g.altura - 1, a.y + alcance);
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const i = g.idx(x, y);
-        if (g.aldeiaDona[i] !== id) continue;
-        g.aldeiaDona[i] = -1;
-        g.territorio[i] = -1;
-        g.estrada[i] = 0;
-        // O que é acidente do terreno fica de pé: este laço limpa o mapa
-        // direto, sem passar por `derrubar`, e sem a guarda ele apagava o
-        // vulcão que por acaso estivesse dentro do território da aldeia.
-        if (g.construcao[i] !== 0 && ED_NATURAL[g.construcao[i] - 1] !== 1) {
-          const tipo = g.construcao[i] - 1;
-          g.desocupar(i, ED_OCUPA[tipo * 2], ED_OCUPA[tipo * 2 + 1]);
-          g.construcao[i] = virarRuina ? ED.ruina + 1 : 0;
-          if (g.construcao[i] !== 0) g.ocupar(i, 1, 1);
-        }
-        g.marcarSujo(x, y);
+
+    // Apaga construções e território daquela aldeia **varrendo o mapa inteiro**.
+    //
+    // Já foi um quadrado em volta da praça, dimensionado por
+    // `sqrt(território)`, e depois uma inundação a partir do centro. Os dois
+    // erram pelo mesmo motivo: desde que a fronteira cresce em forma livre, o
+    // território de uma vila não é um quadrado, não é um círculo e **nem sempre
+    // é contíguo** — basta uma vizinha mais forte cortar a mancha ao meio para
+    // sobrar um naco separado do resto.
+    //
+    // O que ficava para trás não era sujeira inofensiva: `criarAldeia`
+    // **reaproveita o id** de uma aldeia morta, então a vila seguinte nascia
+    // dona de uma herança de chão que nunca conquistou, do outro lado do mapa,
+    // com o contador de território zerado. É a mesma armadilha do slot de
+    // criatura reciclado, um andar acima.
+    //
+    // Varrer tudo é O(mapa), e no maior mapa isso são alguns milissegundos —
+    // pago uma vez por aldeia destruída, que é evento raro. Exatidão aqui vale
+    // mais que o atalho.
+    for (let i = 0; i < g.total; i++) {
+      if (g.aldeiaDona[i] !== id) continue;
+      const x = i % g.largura;
+      const y = (i / g.largura) | 0;
+      g.aldeiaDona[i] = -1;
+      g.territorio[i] = -1;
+      g.estrada[i] = 0;
+      // O que é acidente do terreno fica de pé: este laço limpa o mapa direto,
+      // sem passar por `derrubar`, e sem a guarda ele apagava o vulcão que por
+      // acaso estivesse dentro do território da aldeia.
+      if (g.construcao[i] !== 0 && ED_NATURAL[g.construcao[i] - 1] !== 1) {
+        const tipo = g.construcao[i] - 1;
+        g.desocupar(i, ED_OCUPA[tipo * 2], ED_OCUPA[tipo * 2 + 1]);
+        g.construcao[i] = virarRuina ? ED.ruina + 1 : 0;
+        if (g.construcao[i] !== 0) g.ocupar(i, 1, 1);
       }
+      g.marcarSujo(x, y);
     }
+
     // moradores viram andarilhos sem casa
     const c = this.criaturas;
     for (let i = 0; i < c.limite; i++) {
@@ -395,26 +578,51 @@ export class Mundo {
 
   // --------------------------------------------------------------------- reinos
 
+  /**
+   * Funda um reino. **O id nunca é reaproveitado** — cada reino que já existiu
+   * fica ocupando o lugar dele em `reinos`, marcado como inativo.
+   *
+   * Aldeia recicla id e criatura recicla slot, e as duas coisas já custaram
+   * correção aqui (ver a seção "Coisas que já quebraram" no `CLAUDE.md`).
+   * Reino não recicla porque o número dele fica guardado em lugares que não
+   * têm como conferir se ainda é o mesmo reino: `grid.territorio`, de tile em
+   * tile, e `criaturas.noticia`, dentro de um mensageiro que pode andar mil
+   * ticks até chegar em casa. Um id reciclado ali faria um povo apresentar um
+   * reino que nunca viu.
+   *
+   * O custo é um objeto morto por reino extinto. Numa partida de horas isso são
+   * algumas centenas de entradas inativas — barato demais para justificar o
+   * risco do outro lado.
+   */
   criarReino(especie: number, nome: string, cor: number): Reino {
-    let id = this.reinos.findIndex((r) => !r.ativo);
     const novo: Reino = {
-      id: id >= 0 ? id : this.reinos.length,
+      id: this.reinos.length,
       ativo: true,
       nome,
       cor,
       especie,
       capital: -1,
       aldeias: [],
+      conhecidos: new Set(),
+      rancor: new Map(),
+      marcoDaGuerra: new Map(),
       relacoes: new Map(),
       guerras: new Set(),
       aliancas: new Set(),
       era: 0,
+      // Todo povo nasce sabendo o mesmo punhado de coisas: fazer fogo e lascar
+      // pedra. O resto é descoberta.
+      conhecimento: 0,
+      tecnologias: new Set(TEC_INICIAIS),
       fundadoEm: this.tick,
       populacao: 0,
       territorio: 0,
+      rei: -1,
+      reiGer: 0,
+      casaReal: -1,
+      tesouro: 0,
     };
-    if (id >= 0) this.reinos[id] = novo;
-    else this.reinos.push(novo);
+    this.reinos.push(novo);
     this.eventos.emitir('reino:fundado', { reino: novo.id, nome });
     return novo;
   }
@@ -428,6 +636,9 @@ export class Mundo {
       outro.relacoes.delete(id);
       outro.guerras.delete(id);
       outro.aliancas.delete(id);
+      outro.conhecidos.delete(id);
+      outro.rancor.delete(id);
+      outro.marcoDaGuerra.delete(id);
     }
     this.eventos.emitir('reino:extinto', { reino: id, nome: r.nome });
   }
@@ -440,9 +651,69 @@ export class Mundo {
     const ra = this.reinos[a];
     const rb = this.reinos[b];
     if (!ra?.ativo || !rb?.ativo) return;
+    // Não se tem opinião sobre quem não se conhece. Sem esta guarda a névoa
+    // seria enfeite de interface: a relação continuaria azedando por atrito de
+    // fronteira entre dois reinos que nunca se viram, e no dia do encontro eles
+    // já chegariam prontos para a guerra.
+    if (!ra.conhecidos.has(b)) return;
     const novo = Math.max(-100, Math.min(100, (ra.relacoes.get(b) ?? 0) + delta));
     ra.relacoes.set(b, novo);
     rb.relacoes.set(a, novo);
+  }
+
+  /** O reino já descobriu aquela tecnologia? */
+  reinoSabe(reino: number, tecnologia: number): boolean {
+    if (tecnologia < 0) return true; // nada exigido
+    return this.reinos[reino]?.tecnologias.has(tecnologia) ?? false;
+  }
+
+  /** Um reino já sabe que o outro existe? */
+  conhece(a: number, b: number): boolean {
+    if (a === b) return true;
+    return this.reinos[a]?.conhecidos.has(b) ?? false;
+  }
+
+  /**
+   * Os dois reinos passam a saber um do outro. O contato é sempre mútuo: quem
+   * é visto também vê.
+   *
+   * Chamado pelo sistema de contato quando um mensageiro chega em casa, pelo
+   * poder de revelação do jogador e por qualquer ato diplomático — não dá para
+   * declarar guerra a quem não se conhece, então declarar apresenta.
+   */
+  apresentarReinos(a: number, b: number, quem = -1): void {
+    if (a === b) return;
+    const ra = this.reinos[a];
+    const rb = this.reinos[b];
+    if (!ra?.ativo || !rb?.ativo) return;
+    if (ra.conhecidos.has(b)) return;
+    ra.conhecidos.add(b);
+    rb.conhecidos.add(a);
+    ra.relacoes.set(b, 0);
+    rb.relacoes.set(a, 0);
+    this.eventos.emitir('reino:conheceu', { a, b, quem });
+  }
+
+  /** Há quantos ticks a guerra (ou a paz) com aquele reino dura. */
+  tempoDeSituacao(a: number, b: number): number {
+    const marco = this.reinos[a]?.marcoDaGuerra.get(b);
+    return marco === undefined ? Infinity : this.tick - marco;
+  }
+
+  /** Quanto `a` tem a cobrar de `b`. */
+  rancorEntre(a: number, b: number): number {
+    return this.reinos[a]?.rancor.get(b) ?? 0;
+  }
+
+  /**
+   * `a` passa a ter mais o que cobrar de `b`. Só de quem já conhece — ninguém
+   * guarda mágoa de um desconhecido.
+   */
+  acumularRancor(a: number, b: number, quanto: number): void {
+    if (a === b || quanto <= 0) return;
+    const ra = this.reinos[a];
+    if (!ra?.ativo || !ra.conhecidos.has(b)) return;
+    ra.rancor.set(b, Math.min(RANCOR_MAXIMO, (ra.rancor.get(b) ?? 0) + quanto));
   }
 
   emGuerra(a: number, b: number): boolean {
@@ -458,6 +729,7 @@ export class Mundo {
     const rb = this.reinos[b];
     if (!ra?.ativo || !rb?.ativo || ra.aliancas.has(b)) return;
     if (this.emGuerra(a, b)) return;
+    this.apresentarReinos(a, b);
     ra.aliancas.add(b);
     rb.aliancas.add(a);
     ra.relacoes.set(b, 80);
@@ -474,26 +746,54 @@ export class Mundo {
     this.eventos.emitir('reino:aliancaRompida', { a, b });
   }
 
-  declararGuerra(a: number, b: number): void {
+  declararGuerra(a: number, b: number, motivo = 'sem motivo declarado'): void {
     const ra = this.reinos[a];
     const rb = this.reinos[b];
     if (!ra?.ativo || !rb?.ativo || ra.guerras.has(b)) return;
-    // declarar guerra a um aliado desfaz a aliança primeiro
-    this.romperAlianca(a, b);
+    // Não se declara guerra a quem não se conhece — mas a mão do jogador pode
+    // forçar, e então a própria declaração é a apresentação.
+    this.apresentarReinos(a, b);
+    // desfazer aliança para atacar o aliado é traição, e trair custa caro
+    if (ra.aliancas.has(b)) {
+      this.romperAlianca(a, b);
+      this.acumularRancor(b, a, RANCOR_POR_TRAICAO);
+    }
     ra.guerras.add(b);
     rb.guerras.add(a);
     ra.relacoes.set(b, -80);
     rb.relacoes.set(a, -80);
-    this.eventos.emitir('reino:guerra', { a, b });
+    ra.marcoDaGuerra.set(b, this.tick);
+    rb.marcoDaGuerra.set(a, this.tick);
+    this.eventos.emitir('reino:guerra', { a, b, motivo });
 
-    // aliados são arrastados para o conflito
-    for (const amigo of [...ra.aliancas]) {
+    // Os aliados **dos dois lados** entram. Antes só os de quem declarava eram
+    // arrastados, e uma aliança defensiva não defendia nada: o reino atacado
+    // ia sozinho para a guerra enquanto os amigos dele assistiam.
+    this.arrastarAliados(a, b);
+    this.arrastarAliados(b, a);
+  }
+
+  /** Puxa os aliados de `lado` para a guerra contra `inimigo`. */
+  private arrastarAliados(lado: number, inimigo: number): void {
+    const dono = this.reinos[lado];
+    const alvo = this.reinos[inimigo];
+    if (!dono?.ativo || !alvo?.ativo) return;
+    for (const amigo of [...dono.aliancas]) {
+      if (amigo === inimigo) continue;
       const r = this.reinos[amigo];
-      if (r?.ativo && !r.guerras.has(b)) {
-        r.guerras.add(b);
-        rb.guerras.add(amigo);
-        this.eventos.emitir('reino:guerra', { a: amigo, b });
-      }
+      if (!r?.ativo || r.guerras.has(inimigo)) continue;
+      this.apresentarReinos(amigo, inimigo);
+      r.guerras.add(inimigo);
+      alvo.guerras.add(amigo);
+      r.relacoes.set(inimigo, -60);
+      alvo.relacoes.set(amigo, -60);
+      r.marcoDaGuerra.set(inimigo, this.tick);
+      alvo.marcoDaGuerra.set(amigo, this.tick);
+      this.eventos.emitir('reino:guerra', {
+        a: amigo,
+        b: inimigo,
+        motivo: `aliança com ${dono.nome}`,
+      });
     }
   }
 
@@ -505,6 +805,8 @@ export class Mundo {
     rb.guerras.delete(a);
     ra.relacoes.set(b, 10);
     rb.relacoes.set(a, 10);
+    ra.marcoDaGuerra.set(b, this.tick);
+    rb.marcoDaGuerra.set(a, this.tick);
     this.eventos.emitir('reino:paz', { a, b });
   }
 
@@ -562,7 +864,9 @@ export class Mundo {
         if (g.aldeiaDona[i] !== a.id) continue;
         const e = g.construcao[i];
         if (e === 0) continue;
-        cap += ED_ABRIGA[e - 1];
+        // Abrigo e moradia valem o que o material vale: a mesma casa de palha
+        // guarda metade do que a de pedra lavrada guarda.
+        cap += ED_ABRIGA[e - 1] * MAT_FATOR[materialDoAcabamento(g.acabamento[i])];
         a.predios[e - 1]++;
         if (ED_MORADIA[e - 1] > 0) a.casasIdx.push(i);
         if (e - 1 === ED.moinho) a.moinhosIdx.push(i);
@@ -572,9 +876,64 @@ export class Mundo {
     }
     // o teto por nível é o que impede a aldeia campeã de crescer sem fim
     const teto = BAL.tetoPorNivel[Math.min(a.nivel, BAL.tetoPorNivel.length - 1)];
-    a.capacidade = Math.min(cap, teto);
+    a.capacidade = Math.min(Math.round(cap), teto);
     a.casas = casas;
     a.capacidadeEstoque = 260 + celeiros * 420 + a.nivel * 160;
+  }
+
+  /**
+   * O índice ainda aponta para a **mesma pessoa** de quando foi guardado?
+   *
+   * Índice sozinho não basta: slot de criatura morta é reaproveitado, e o
+   * número volta a valer para outra pessoa. Ver `Criaturas.geracao`.
+   */
+  mesmaPessoa(i: number, geracao: number): boolean {
+    if (i < 0 || i >= this.criaturas.capacidade) return false;
+    return this.criaturas.vivo[i] === 1 && this.criaturas.geracao[i] === geracao;
+  }
+
+  /** Um identificador de linhagem novo. */
+  novaFamilia(): number {
+    return this.proximaFamilia++;
+  }
+
+  /**
+   * Funda um clã novo, com valores sorteados, e devolve o id dele.
+   *
+   * Os valores saem de uma faixa larga de propósito: clã é a fonte de conflito
+   * **dentro** do reino, e um mundo em que todos os clãs pensam parecido não
+   * produz rebelião nenhuma. A espécie desloca a média — orc nasce mais
+   * marcial, elfo mais fechado —, mas a variação individual é maior que a
+   * diferença entre povos, para que dois clãs do mesmo povo possam ser
+   * opostos.
+   */
+  criarCla(especie: number): Cla {
+    const def = especies.porIndice(especie);
+    const belico = def.povo?.beligerancia ?? 0.5;
+    const xeno = def.povo?.xenofobia ?? 0.3;
+    const novo: Cla = {
+      id: this.clas.length,
+      nome: nomeDeCla(this.rng, def.id),
+      especie,
+      marcialidade: limitar01(belico * 0.5 + this.rng.entre(0, 0.7)),
+      ganancia: limitar01(this.rng.entre(0.1, 0.95)),
+      submissao: limitar01(this.rng.entre(0.15, 0.95)),
+      fechamento: limitar01(xeno * 0.5 + this.rng.entre(0, 0.65)),
+      fundadoEm: this.tick,
+    };
+    this.clas.push(novo);
+    this.proximoCla = this.clas.length;
+    return novo;
+  }
+
+  /** Um identificador de clã novo. */
+  novoCla(): number {
+    return this.criarCla(0).id;
+  }
+
+  /** O clã daquele número, ou undefined se ele não existir. */
+  cla(id: number): Cla | undefined {
+    return id >= 0 ? this.clas[id] : undefined;
   }
 
   /** Aldeia ativa mais próxima de (x, y) dentro do raio, ou -1. */

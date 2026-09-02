@@ -2,7 +2,9 @@ import type { Sistema } from '../core/sistemas.js';
 import type { Mundo } from '../core/mundo.js';
 import type { Causa } from '../core/eventos.js';
 import { NIVEL_MAR } from '../core/grid.js';
-import { ESP_DOMINIO, ESP_METABOLISMO, ESP_VIDA } from '../dados/especies.js';
+import { ESP_DOMINIO, ESP_METABOLISMO } from '../dados/especies.js';
+import { Campo, MASCARA_IMORTAL } from '../dados/tracos.js';
+import { fator, vidaMaxima } from './genetica.js';
 import { B } from '../dados/biomas.js';
 import { BAL } from './balanco.js';
 
@@ -28,14 +30,17 @@ export const sistemaVida: Sistema = {
       if (c.esperaFilho[i] > 0) c.esperaFilho[i] -= 1;
       if (c.cdAtaque[i] > 0) c.cdAtaque[i] -= 1;
 
-      if (c.idade[i] >= c.longevidade[i]) {
+      // A velhice não alcança quem nasceu imortal. É o único traço que anula
+      // uma causa de morte em vez de mexer num número — e é por isso que ele é
+      // o mais raro da tabela.
+      if (c.idade[i] >= c.longevidade[i] && (c.tracos[i] & MASCARA_IMORTAL) === 0) {
         mortos.push(i);
         causas.push('velhice');
         continue;
       }
 
       const esp = c.especie[i];
-      c.fome[i] += BAL.fomePorTick * ESP_METABOLISMO[esp];
+      c.fome[i] += BAL.fomePorTick * ESP_METABOLISMO[esp] * fator(c.tracos[i], Campo.fome);
 
       let causa: Causa | null = null;
 
@@ -43,8 +48,11 @@ export const sistemaVida: Sistema = {
         c.fome[i] = BAL.fomeCritica;
         c.vida[i] -= BAL.danoFome;
         causa = 'fome';
-      } else if (c.fome[i] < 50 && c.vida[i] < ESP_VIDA[esp]) {
-        c.vida[i] = Math.min(ESP_VIDA[esp], c.vida[i] + BAL.curaPorTick);
+      } else {
+        const teto = vidaMaxima(c, i);
+        if (c.fome[i] < 50 && c.vida[i] < teto) {
+          c.vida[i] = Math.min(teto, c.vida[i] + BAL.curaPorTick);
+        }
       }
 
       // --------------------------------------------------------- ambiente

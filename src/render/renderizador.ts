@@ -7,8 +7,16 @@ import {
   type BancoDeEquipamento, type BancoDeSprites,
 } from './sprites.js';
 import { CamadaTiles, ZOOM_DETALHE } from './tiles.js';
-import { ESP_PORTE } from '../dados/especies.js';
+import { ESP_PORTE, especies } from '../dados/especies.js';
 import { EQ_COR } from '../dados/equipamentos.js';
+
+/**
+ * Zoom a partir do qual os nomes passam de reino para vila.
+ *
+ * Abaixo dele a tela mostra geografia grande e a pergunta é "de quem é esta
+ * parte do mundo"; acima, a pergunta vira "que lugar é este".
+ */
+const ZOOM_NOME_DA_VILA = 5;
 
 /**
  * Desenha o mundo.
@@ -18,6 +26,21 @@ import { EQ_COR } from '../dados/equipamentos.js';
  * nada); só quando o zoom aproxima é que viram sprites desenhados um a um — e
  * aí são poucas na tela, porque a área visível é pequena.
  */
+/** Texto com contorno escuro, para ler sobre qualquer cor de mapa. */
+function escrito(
+  ctx: CanvasRenderingContext2D,
+  texto: string,
+  x: number,
+  y: number,
+  cor: string,
+): void {
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(5,7,12,0.85)';
+  ctx.strokeText(texto, x, y);
+  ctx.fillStyle = cor;
+  ctx.fillText(texto, x, y);
+}
+
 export class Renderizador {
   readonly camera: Camera;
   private terreno: CamadaTerreno;
@@ -143,6 +166,16 @@ export class Renderizador {
     const detalhado = cam.escala >= ZOOM_DETALHE;
     this.pedacosFaltando = detalhado ? this.tiles.desenharChao(ctx, cam) : 0;
 
+    // O mapa político vem depois do chão e antes de tudo o que está de pé:
+    // fronteira por baixo de casa e de árvore, como uma marca no terreno.
+    //
+    // É desenhado **em qualquer zoom**, e não só de perto: a pergunta "de quem
+    // é esta parte do mundo" é justamente a da visão de longe. De longe só a
+    // divisa é traçada, porque o preenchimento já vem tingido no mapa
+    // esticado; de perto o bloco também é pintado, que ali não há tingimento
+    // nenhum por baixo.
+    this.tiles.desenharTerritorio(ctx, cam, detalhado);
+
     if (detalhado) {
       // A espuma vai entre o chão e os objetos: por cima da água, por baixo de
       // qualquer coisa que esteja de pé na praia.
@@ -167,7 +200,7 @@ export class Renderizador {
     // da interface: nuvem que esconde o nome da aldeia atrapalha em vez de
     // ambientar.
     this.desenharNuvens();
-    if (this.mostrarNomes && cam.escala >= 2.2) this.desenharRotulos();
+    if (this.mostrarNomes) this.desenharRotulos();
     this.desenharSelecao();
     this.desenharPincel();
 
@@ -413,6 +446,23 @@ export class Renderizador {
     const cam = this.camera;
     const area = cam.area();
     const e = cam.escala;
+    const g = this.mundo.grid;
+
+    // Recorta o céu ao tamanho do mundo.
+    //
+    // As nuvens entram pela borda de fora de propósito, para atravessarem o
+    // mapa em vez de brotarem no meio dele. Sem o recorte, elas eram desenhadas
+    // sobre o vazio preto que sobra em volta do mundo quando ele não preenche a
+    // tela — bolhas brancas boiando no nada, ao lado do mapa.
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(
+      cam.mundoParaTelaX(0),
+      cam.mundoParaTelaY(0),
+      g.largura * e,
+      g.altura * e,
+    );
+    ctx.clip();
 
     for (const n of nuvens) {
       if (n.forca <= 0.01) continue;
@@ -472,6 +522,7 @@ export class Renderizador {
         else ctx.fillRect(px, py, Math.max(1, e * 0.1), Math.max(1, e * 0.1));
       }
     }
+    ctx.restore();
   }
 
   /**
@@ -512,29 +563,87 @@ export class Renderizador {
   }
 
   /** Nomes das aldeias e dos reinos por cima do mapa. */
+  /**
+   * Os nomes no mapa, e eles mudam com a distância.
+   *
+   * **De longe** o que interessa é a geopolítica: quantos reinos existem, de que
+   * povo são e qual é o grande. Cada reino aparece uma vez, no centro do que
+   * domina, com espécie e população. **De perto** o que interessa é o lugar: aí
+   * os reinos somem e cada vila diz o próprio nome.
+   *
+   * Antes eram sempre as vilas, em qualquer zoom. Afastado, isso virava um
+   * amontoado de dezenas de nomes de povoado sobrepostos, ilegível, e ainda por
+   * cima escondia justamente a informação que a visão de longe existe para dar.
+   */
   private desenharRotulos(): void {
+    const ctx = this.ctx;
+    const cam = this.camera;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+
+    if (cam.escala < ZOOM_NOME_DA_VILA) this.rotularReinos();
+    else this.rotularVilas();
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  /** Um nome por reino, no meio do que ele domina. */
+  private rotularReinos(): void {
+    const ctx = this.ctx;
+    const cam = this.camera;
+    const area = cam.area();
+
+    for (const r of this.mundo.reinos) {
+      if (!r.ativo || r.populacao <= 0) continue;
+
+      // O centro é a média das vilas, ponderada pela população: um império com
+      // uma capital grande e três povoados distantes escreve o nome na capital,
+      // que é onde ele de fato está.
+      let somaX = 0;
+      let somaY = 0;
+      let peso = 0;
+      for (const id of r.aldeias) {
+        const a = this.mundo.aldeias[id];
+        if (!a?.ativa) continue;
+        const p = Math.max(1, a.populacao);
+        somaX += a.x * p;
+        somaY += a.y * p;
+        peso += p;
+      }
+      if (peso === 0) continue;
+      const cx = somaX / peso;
+      const cy = somaY / peso;
+      if (cx < area.x0 || cx > area.x1 || cy < area.y0 || cy > area.y1) continue;
+
+      const sx = cam.mundoParaTelaX(cx);
+      const sy = cam.mundoParaTelaY(cy);
+      const povo = especies.porIndice(r.especie).plural;
+      const cor = `#${r.cor.toString(16).padStart(6, '0')}`;
+
+      ctx.font = '600 15px ui-monospace, "Cascadia Mono", Consolas, monospace';
+      escrito(ctx, r.nome, sx, sy - 8, cor);
+      ctx.font = '11px ui-monospace, "Cascadia Mono", Consolas, monospace';
+      escrito(ctx, `${povo} · ${r.populacao}`, sx, sy + 8, 'rgba(232,236,242,0.72)');
+    }
+  }
+
+  /** De perto, cada vila diz o próprio nome. */
+  private rotularVilas(): void {
     const ctx = this.ctx;
     const cam = this.camera;
     const area = cam.area();
     ctx.font = '11px ui-monospace, "Cascadia Mono", Consolas, monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
 
     for (const a of this.mundo.aldeias) {
       if (!a.ativa) continue;
       if (a.x < area.x0 || a.x > area.x1 || a.y < area.y0 || a.y > area.y1) continue;
       const sx = cam.mundoParaTelaX(a.x + 0.5);
-      const sy = cam.mundoParaTelaY(a.y) - a.raio * cam.escala * 0.25 - 4;
+      const sy = cam.mundoParaTelaY(a.y) - 6;
       const reino = this.mundo.reinos[a.reino];
-      const rotulo = `${a.nome} · ${a.populacao}`;
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(5,7,12,0.85)';
-      ctx.strokeText(rotulo, sx, sy);
-      ctx.fillStyle = reino?.ativo ? `#${reino.cor.toString(16).padStart(6, '0')}` : '#cfd6e0';
-      ctx.fillText(rotulo, sx, sy);
+      const cor = reino?.ativo ? `#${reino.cor.toString(16).padStart(6, '0')}` : '#cfd6e0';
+      escrito(ctx, `${a.nome} · ${a.populacao}`, sx, sy, cor);
     }
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
   }
 
   private desenharSelecao(): void {

@@ -1,8 +1,9 @@
 import type { Barco } from '../sim/barcos.js';
-import { Mundo, TAMANHOS, type Aldeia, type Reino } from './mundo.js';
+import { Mundo, TAMANHOS, type Aldeia, type Cla, type Reino } from './mundo.js';
 import { biomas } from '../dados/biomas.js';
 import { edificios, ED_OCUPA } from '../dados/edificios.js';
 import { especies } from '../dados/especies.js';
+import { tecnologias } from '../dados/tecnologias.js';
 import { recursos } from '../dados/recursos.js';
 import { equipamentos } from '../dados/equipamentos.js';
 import { estoqueVazio } from '../dados/materiais.js';
@@ -45,11 +46,22 @@ interface Empacotado {
     campos: Record<string, string>;
   };
   aldeias: Aldeia[];
-  reinos: Array<Omit<Reino, 'relacoes' | 'guerras' | 'aliancas'> & {
-    relacoes: Array<[number, number]>;
-    guerras: number[];
-    aliancas: number[];
-  }>;
+  clas: Cla[];
+  reinos: Array<
+    Omit<
+      Reino,
+      'relacoes' | 'guerras' | 'aliancas' | 'conhecidos' | 'rancor' | 'marcoDaGuerra'
+      | 'tecnologias'
+    > & {
+      relacoes: Array<[number, number]>;
+      guerras: number[];
+      aliancas: number[];
+      conhecidos: number[];
+      rancor: Array<[number, number]>;
+      marcoDaGuerra: Array<[number, number]>;
+      tecnologias: number[];
+    }
+  >;
 }
 
 // ------------------------------------------------------------------ base64
@@ -125,6 +137,7 @@ export function empacotar(mundo: Mundo): string {
       estrada: paraB64(g.estrada),
       recurso: paraB64(g.recurso),
       recursoQtd: paraB64(g.recursoQtd),
+      acabamento: paraB64(g.acabamento),
       matiz: paraB64(g.matiz),
     },
     criaturas: {
@@ -157,14 +170,26 @@ export function empacotar(mundo: Mundo): string {
         arma: paraB64(c.arma),
         escudo: paraB64(c.escudo),
         armadura: paraB64(c.armadura),
+        riqueza: paraB64(c.riqueza),
+        familia: paraB64(c.familia),
+        cla: paraB64(c.cla),
+        fidelidade: paraB64(c.fidelidade),
+        noticia: paraB64(c.noticia),
+        tracos: paraB64(c.tracos),
+        geracao: paraB64(c.geracao),
       },
     },
     aldeias: mundo.aldeias,
+    clas: mundo.clas,
     reinos: mundo.reinos.map((r) => ({
       ...r,
       relacoes: [...r.relacoes.entries()],
       guerras: [...r.guerras],
       aliancas: [...r.aliancas],
+      conhecidos: [...r.conhecidos],
+      rancor: [...r.rancor.entries()],
+      marcoDaGuerra: [...r.marcoDaGuerra.entries()],
+      tecnologias: [...r.tecnologias],
     })),
   };
 
@@ -218,6 +243,7 @@ export function desempacotar(texto: string): Mundo {
   preencher(g.estrada, d.grid.estrada);
   preencher(g.recurso, d.grid.recurso);
   preencher(g.recursoQtd, d.grid.recursoQtd);
+  preencher(g.acabamento, d.grid.acabamento);
   preencher(g.matiz, d.grid.matiz);
 
   const c = mundo.criaturas;
@@ -249,6 +275,13 @@ export function desempacotar(texto: string): Mundo {
   preencher(c.arma, campos.arma);
   preencher(c.escudo, campos.escudo);
   preencher(c.armadura, campos.armadura);
+  preencher(c.riqueza, campos.riqueza);
+  preencher(c.familia, campos.familia);
+  preencher(c.cla, campos.cla);
+  preencher(c.fidelidade, campos.fidelidade);
+  preencher(c.noticia, campos.noticia);
+  preencher(c.tracos, campos.tracos);
+  preencher(c.geracao, campos.geracao);
   c.reconstruirDeArrays(d.criaturas.limite);
 
   // ---------------------------------------- tradução de índices por id de texto
@@ -270,12 +303,36 @@ export function desempacotar(texto: string): Mundo {
     ...a,
     predios: new Int32Array(edificios.tamanho),
     estoque: { ...estoqueVazio(), ...a.estoque },
+    // save anterior à fronteira em forma livre não tem fila nenhuma; vazia é o
+    // valor certo, porque `refazerFranja` a reconstrói do mapa na primeira
+    // passada de expansão
+    franja: a.franja ?? [],
   }));
+  // Save anterior aos clãs: as criaturas carregam números de clã que não
+  // apontam para nada. `Mundo.cla()` devolve `undefined` para eles e todo mundo
+  // que lê trata isso como "sem clã", que é exatamente o que aquela partida era.
+  mundo.clas = d.clas ?? [];
+  mundo.proximoCla = mundo.clas.length;
   mundo.reinos = (d.reinos ?? []).map((r) => ({
     ...r,
     relacoes: new Map(r.relacoes ?? []),
     guerras: new Set(r.guerras ?? []),
     aliancas: new Set(r.aliancas ?? []),
+    // Mundo salvo antes da névoa: todo mundo já se conhecia, então o mais fiel
+    // ao que aquela partida era é dar por conhecido quem já tinha relação,
+    // guerra ou aliança registrada.
+    conhecidos: new Set(
+      r.conhecidos ??
+        [...(r.relacoes ?? []).map(([outro]) => outro), ...(r.guerras ?? []), ...(r.aliancas ?? [])],
+    ),
+    rancor: new Map(r.rancor ?? []),
+    marcoDaGuerra: new Map(r.marcoDaGuerra ?? []),
+    // Mundo salvo antes da tecnologia: aquele reino sabia fazer tudo, porque o
+    // jogo inteiro pressupunha isso. Dar a ele a árvore completa preserva a
+    // partida como ela era, em vez de rebaixá-la à idade da pedra no meio do
+    // caminho.
+    conhecimento: r.conhecimento ?? 0,
+    tecnologias: new Set(r.tecnologias ?? tecnologias.todos().map((_t, k) => k)),
   }));
 
   // fogo: o conjunto é reconstruído a partir do grid

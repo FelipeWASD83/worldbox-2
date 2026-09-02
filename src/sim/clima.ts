@@ -69,6 +69,19 @@ function semearNuvens(mundo: Mundo): void {
 
   const sorte = mundo.rng.f();
   const tipo = sorte < BAL.chanceNuvemDeChuva ? 1 : 0;
+
+  // A vida é **calculada da travessia**, não sorteada.
+  //
+  // Era um número fixo entre 900 e 2600 ticks, e a nuvem anda devagar: no mapa
+  // médio ela se desfazia depois de uns quarenta tiles, sempre perto da borda
+  // por onde tinha entrado. Do lado de fora parecia defeito de spawn — nuvem
+  // aparecendo no canto esquerdo e sumindo ali mesmo —, e era só ela morrer de
+  // velhice antes de chegar a lugar nenhum. Aqui ela vive o bastante para
+  // atravessar o mapa inteiro, com folga para a entrada e a saída.
+  const velocidade = Math.max(0.001, Math.hypot(mundo.ventoX, mundo.ventoY));
+  const travessia = Math.hypot(g.largura, g.altura) + 40;
+  const vida = (travessia / velocidade) * mundo.rng.entre(1.05, 1.5);
+
   mundo.nuvens.push({
     x,
     y,
@@ -78,7 +91,7 @@ function semearNuvens(mundo: Mundo): void {
     tipo,
     forca: 0,
     idade: 0,
-    vida: mundo.rng.entre(900, 2600),
+    vida,
   });
 }
 
@@ -90,14 +103,14 @@ function moverNuvens(mundo: Mundo): void {
   // O vento muda devagar, e todas as nuvens obedecem a ele: nuvens indo cada
   // uma para um lado não parecem clima, parecem manchas soltas.
   if (mundo.tick % BAL.intervaloDoVento === 0) {
-    mundo.ventoX += mundo.rng.entre(-0.006, 0.006);
-    mundo.ventoY += mundo.rng.entre(-0.004, 0.004);
-    const v = Math.hypot(mundo.ventoX, mundo.ventoY);
-    const alvo = BAL.velocidadeDoVento;
-    if (v > 0.0001) {
-      mundo.ventoX = (mundo.ventoX / v) * alvo;
-      mundo.ventoY = (mundo.ventoY / v) * alvo;
-    }
+    // O vento **gira**, e não sofre um empurrão em cada eixo. Somando ruído a
+    // x e y separadamente e depois normalizando, a direção resultante ficava
+    // presa perto de onde já estava — o mundo inteiro passava a partida com as
+    // nuvens entrando sempre pela mesma borda.
+    const angulo = Math.atan2(mundo.ventoY, mundo.ventoX)
+      + mundo.rng.entre(-BAL.giroDoVento, BAL.giroDoVento);
+    mundo.ventoX = Math.cos(angulo) * BAL.velocidadeDoVento;
+    mundo.ventoY = Math.sin(angulo) * BAL.velocidadeDoVento;
   }
 
   for (let k = nuvens.length - 1; k >= 0; k--) {
@@ -105,9 +118,12 @@ function moverNuvens(mundo: Mundo): void {
     n.x += n.vx * 2;
     n.y += n.vy * 2;
     n.idade += 2;
-    // aparece e some suavemente
-    const entrada = Math.min(1, n.idade / 220);
-    const saida = Math.min(1, Math.max(0, (n.vida - n.idade) / 220));
+    // Aparece e some suavemente. A janela é proporcional à vida: com um número
+    // fixo, uma nuvem de vida longa passava quase toda a travessia em força
+    // cheia e piscava no fim.
+    const janela = Math.max(160, n.vida * 0.08);
+    const entrada = Math.min(1, n.idade / janela);
+    const saida = Math.min(1, Math.max(0, (n.vida - n.idade) / janela));
     n.forca = Math.min(entrada, saida);
 
     const fora =

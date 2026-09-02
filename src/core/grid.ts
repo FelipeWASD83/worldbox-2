@@ -60,6 +60,22 @@ export class Grid {
   readonly recurso: Uint8Array;
   /** Quanto ainda resta desse recurso (0..255). Zero apaga o recurso. */
   readonly recursoQtd: Uint8Array;
+  /**
+   * De que é feita a construção do tile, e quem a ergueu.
+   *
+   * Um byte com duas coisas empacotadas: o material de obra nos três bits de
+   * baixo e a espécie de quem construiu nos cinco de cima (ver
+   * `empacotarAcabamento`, em `src/dados/edificios.ts`).
+   *
+   * É o que faz o mesmo prédio valer coisas diferentes conforme o povo e a
+   * época: uma casa de palha abriga menos e cai mais fácil que a mesma casa de
+   * pedra lavrada, e as duas podem estar lado a lado na mesma vila, uma
+   * levantada antes da descoberta e a outra depois.
+   *
+   * Só tem sentido onde `construcao` não é zero; nos outros tiles é lixo
+   * inofensivo que ninguém lê.
+   */
+  readonly acabamento: Uint8Array;
   /** Ruído fixo por tile, só para variar a cor no desenho. */
   readonly matiz: Uint8Array;
 
@@ -85,6 +101,7 @@ export class Grid {
     this.estrada = new Uint8Array(this.total);
     this.recurso = new Uint8Array(this.total);
     this.recursoQtd = new Uint8Array(this.total);
+    this.acabamento = new Uint8Array(this.total);
     this.matiz = new Uint8Array(this.total);
     this.chunksL = Math.ceil(largura / LADO_CHUNK);
     this.chunksA = Math.ceil(altura / LADO_CHUNK);

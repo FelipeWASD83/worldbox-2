@@ -3,7 +3,7 @@ import type { Aldeia, Mundo } from '../core/mundo.js';
 import { MARCA_SOLDADO } from '../core/criaturas.js';
 import { ESP_INTELIGENTE } from '../dados/especies.js';
 import {
-  equipamentos, porEncaixe, type Encaixe, type Equipamento,
+  equipamentos, porEncaixe, EQ_TECNOLOGIA, type Encaixe, type Equipamento,
 } from '../dados/equipamentos.js';
 import type { Estoque, Material } from '../dados/materiais.js';
 import { MATERIAIS } from '../dados/materiais.js';
@@ -47,6 +47,7 @@ export const sistemaEquipar: Sistema = {
         melhorar(mundo, a, i, 'escudo', c.escudo, teto);
         melhorar(mundo, a, i, 'armadura', c.armadura, teto);
       }
+
     }
   },
 };
@@ -73,6 +74,10 @@ function melhorar(
     ordem++;
     if (ordem > tetoDeQualidade) break;
     if (def.nivelMinimo > a.nivel) continue;
+    // Saber forjar vem antes de ter com que forjar: um povo que ainda não
+    // descobriu a metalurgia não faz espada por mais ferro que tenha no
+    // celeiro. É o que separa a horda de porretes do exército de aço.
+    if (!mundo.reinoSabe(a.reino, EQ_TECNOLOGIA[equipamentos.indice(def.id)])) continue;
     if (forcaDe(def) <= forcaAtual) continue;
     if (!temComQuePagar(a.estoque, def.custo)) continue;
     melhor = def;

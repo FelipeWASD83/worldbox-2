@@ -6,6 +6,7 @@ import { ED } from '../dados/edificios.js';
 import { especies, ESP_INTELIGENTE } from '../dados/especies.js';
 import { nomeDeAldeia } from '../dados/nomes.js';
 import { BAL } from './balanco.js';
+import { empossarChefes } from './politica.js';
 import { pavimentar } from './urbanismo.js';
 
 /**
@@ -446,6 +447,7 @@ function desembarcarColonos(mundo: Mundo, b: Barco): void {
   nova.estoque.madeira = 30;
 
   const c = mundo.criaturas;
+  const claDaColonia = mundo.criarCla(mae.especie).id;
   for (let k = 0; k < b.tripulantes; k++) {
     const filho = mundo.nascer(
       mae.especie,
@@ -458,8 +460,14 @@ function desembarcarColonos(mundo: Mundo, b: Barco): void {
     c.aldeia[filho] = nova.id;
     c.reino[filho] = nova.reino;
     c.estado[filho] = Estado.Vagando;
+    // colono que desembarca leva a linhagem e o clã de quem embarcou não é
+    // rastreável (ele saiu do pool na travessia), mas sem clã nenhum ele fica
+    // fora da conta de lealdade — então a colônia de além-mar nasce com o seu
+    if (claDaColonia >= 0) c.cla[filho] = claDaColonia;
+    if (c.familia[filho] < 0) c.familia[filho] = mundo.novaFamilia();
     nova.populacao++;
   }
+  empossarChefes(mundo, nova);
   mundo.eventos.emitir('barco:colonizou', {
     aldeia: nova.id,
     reino: nova.reino,

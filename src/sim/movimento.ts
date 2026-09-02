@@ -3,6 +3,8 @@ import type { Mundo } from '../core/mundo.js';
 import { Estado } from '../core/criaturas.js';
 import { NIVEL_MAR, NIVEL_MONTANHA } from '../core/grid.js';
 import { ESP_DOMINIO, ESP_VELOCIDADE } from '../dados/especies.js';
+import { Campo } from '../dados/tracos.js';
+import { fator } from './genetica.js';
 import { EQ_PESO } from '../dados/equipamentos.js';
 import { BIOMA_AGUA } from '../dados/biomas.js';
 
@@ -30,7 +32,7 @@ export const sistemaMovimento: Sistema = {
       if (estado === Estado.Ocioso || estado === Estado.Dormindo) continue;
 
       const esp = c.especie[i];
-      let vel = ESP_VELOCIDADE[esp];
+      let vel = ESP_VELOCIDADE[esp] * fator(c.tracos[i], Campo.velocidade);
       // ferro pesa: quem veste placas anda menos
       if (c.armadura[i] !== 0) vel *= EQ_PESO[c.armadura[i] - 1];
       if (c.escudo[i] !== 0) vel *= EQ_PESO[c.escudo[i] - 1];

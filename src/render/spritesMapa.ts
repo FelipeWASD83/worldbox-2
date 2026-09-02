@@ -1,5 +1,6 @@
 import { recursos, REC_SPRITE } from '../dados/recursos.js';
 import { edificios, ED_SPRITE } from '../dados/edificios.js';
+import { especies } from '../dados/especies.js';
 
 /**
  * Os desenhos das coisas do mapa: árvores, pedras, veios e construções.
@@ -28,12 +29,61 @@ export function gerarSpritesDeRecurso(): BancoDeMapa {
   });
 }
 
-export function gerarSpritesDeEdificio(): BancoDeMapa {
-  return edificios.todos().map((def, i) => {
-    const l = ED_SPRITE[i * 2] * PX_TILE;
-    const a = ED_SPRITE[i * 2 + 1] * PX_TILE;
-    return criarVariantes(l, a, (ctx, v) => desenharEdificio(ctx, def.id, l, a, v));
-  });
+/**
+ * As três variantes de um prédio, num material e por um povo.
+ *
+ * Feito sob demanda, e não tudo de uma vez no boot: são vinte e um tipos vezes
+ * quatro materiais vezes quatro povos vezes três variantes — mil e nove
+ * imagens, quase todas de combinações que aquele mundo nunca vai usar. Um
+ * mundo real usa umas trinta. Quem chama é `CamadaTiles`, que guarda o
+ * resultado num mapa.
+ *
+ * O material manda na aparência e o povo tempera: uma casa de palha élfica e
+ * uma casa de palha órquica são a mesma choça em tons diferentes, e a mesma
+ * casa em pedra lavrada é outra construção. É a versão desenhada do que
+ * `MATERIAIS_DE_OBRA` faz nos números.
+ */
+export function spritesDeEdificio(
+  tipo: number,
+  material: number,
+  especie: number,
+): HTMLCanvasElement[] {
+  const def = edificios.porIndice(tipo);
+  const l = ED_SPRITE[tipo * 2] * PX_TILE;
+  const a = ED_SPRITE[tipo * 2 + 1] * PX_TILE;
+  const pal = paletaDeObra(material, especie);
+  return criarVariantes(l, a, (ctx, v) => desenharEdificio(ctx, def.id, l, a, v, pal));
+}
+
+/**
+ * A paleta de uma obra: o que o material impõe e o que o povo tempera.
+ *
+ * As cores de cada prédio continuam existindo (o celeiro é amarelado, a
+ * ferraria é avermelhada) — elas são **misturadas** com esta, e não
+ * substituídas. É o que mantém os prédios distinguíveis entre si depois de
+ * todos passarem a ser de pedra.
+ */
+export interface PaletaDeObra {
+  readonly parede: string;
+  readonly telhado: string;
+  readonly forca: number;
+}
+
+// As quatro paletas de obra. Ficam bem separadas de propósito: se palha e
+// pedra saírem parecidas na tela, o sistema inteiro de material vira número
+// escondido na ficha, e a ideia é que dê para ver de longe qual reino ainda
+// vive em choça e qual já assenta cantaria.
+const PAREDE_POR_MATERIAL = ['#a89058', '#c69a68', '#a5a199', '#dedad0'];
+const TELHADO_POR_MATERIAL = ['#8a7434', '#8e4f38', '#6a5045', '#4c5578'];
+
+function paletaDeObra(material: number, especie: number): PaletaDeObra {
+  const m = Math.min(material, PAREDE_POR_MATERIAL.length - 1);
+  const povo = especies.porIndice(especie)?.povo;
+  const cor = povo?.corReino;
+  const telhado = cor === undefined
+    ? TELHADO_POR_MATERIAL[m]
+    : misturarCor(TELHADO_POR_MATERIAL[m], `#${cor.toString(16).padStart(6, '0')}`, 0.28);
+  return { parede: PAREDE_POR_MATERIAL[m], telhado, forca: 0.78 };
 }
 
 /**
@@ -366,6 +416,7 @@ function desenharEdificio(
   l: number,
   a: number,
   v: number,
+  pal: PaletaDeObra,
 ): void {
   const cx = l / 2;
 
@@ -379,7 +430,13 @@ function desenharEdificio(
    * vez de deixá-la boiando. A luz vem de cima e da esquerda, como em todo o
    * resto do jogo.
    */
-  const casaBase = (parede: string, telhado: string, sombra: string): void => {
+  const casaBase = (corParede: string, corTelhado: string, corSombra: string): void => {
+    // O material puxa as três cores para o lado dele, sem apagar a identidade
+    // do prédio: um celeiro de pedra continua sendo mais amarelado que uma
+    // ferraria de pedra.
+    const parede = misturarCor(corParede, pal.parede, pal.forca);
+    const telhado = misturarCor(corTelhado, pal.telhado, pal.forca);
+    const sombra = misturarCor(corSombra, sombraDe(pal.parede, 0.5), pal.forca);
     const alturaParede = a * 0.46;
     const alturaTelhado = a - alturaParede;
     const topoParede = a - alturaParede;
@@ -416,6 +473,21 @@ function desenharEdificio(
   };
 
   switch (id) {
+    case 'fogueira': {
+      // Três achas cruzadas e uma chama. Não tem parede nem telhado: é
+      // justamente o ponto — a era tribal não constrói, ela acende.
+      const base = a * 0.55;
+      bloco(ctx, cx - l * 0.34, a - 3, l * 0.68, 3, '#4a3a2c');
+      bloco(ctx, cx - l * 0.3, a - base * 0.5, l * 0.24, 3, '#6b4a2e');
+      bloco(ctx, cx + l * 0.06, a - base * 0.5, l * 0.24, 3, '#7d5836');
+      bloco(ctx, cx - 2, a - base * 0.9, 4, base * 0.45, '#8a5f38');
+      // a chama, mais alta na variante do meio
+      const alt = base * (0.55 + v * 0.12);
+      bloco(ctx, cx - 3, a - base * 0.45 - alt, 6, alt, '#e08a2a');
+      bloco(ctx, cx - 2, a - base * 0.45 - alt * 0.75, 4, alt * 0.7, '#f2c24a');
+      bloco(ctx, cx - 1, a - base * 0.45 - alt * 0.45, 2, alt * 0.4, '#fdf0b0');
+      break;
+    }
     case 'casa':
       casaBase('#cda474', '#9a4f3a', '#a8815a');
       abertura(cx - 3, a - a * 0.3, 6, a * 0.3 - 2, '#4a3220'); // porta
@@ -646,6 +718,18 @@ function desenharEdificio(
 }
 
 /** A mesma cor, mais clara. É o brilho do lado de onde vem a luz. */
+/** Mistura duas cores, com `f` indo de 0 (só a primeira) a 1 (só a segunda). */
+function misturarCor(a: string, b: string, f: number): string {
+  const na = parseInt(a.slice(1), 16);
+  const nb = parseInt(b.slice(1), 16);
+  const c = (deslocamento: number): number => {
+    const ca = (na >> deslocamento) & 255;
+    const cb = (nb >> deslocamento) & 255;
+    return Math.round(ca + (cb - ca) * f);
+  };
+  return `#${((c(16) << 16) | (c(8) << 8) | c(0)).toString(16).padStart(6, '0')}`;
+}
+
 function clarearCor(cor: string, f: number): string {
   const n = parseInt(cor.slice(1), 16);
   const mistura = (c: number): number => Math.round(c + (255 - c) * f);

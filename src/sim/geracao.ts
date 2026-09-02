@@ -4,14 +4,15 @@ import { NIVEL_MAR, NIVEL_MONTANHA, type Grid } from '../core/grid.js';
 import type { Mundo } from '../core/mundo.js';
 import { B, BIOMA_FERTIL, biomas } from '../dados/biomas.js';
 import {
-  recursos, REC_DENSIDADE_NO_BIOMA, REC_QUANTIDADE, REC_SPRITE,
+  recursos, REC_DENSIDADE_NO_BIOMA, REC_MATERIAL, REC_QUANTIDADE, REC_SPRITE,
 } from '../dados/recursos.js';
 import {
-  ESPECIES_SELVAGENS, ESPECIES_CIVILIZADAS, especies,
+  ESPECIES_SELVAGENS, ESPECIES_FUNDADORAS, especies,
 } from '../dados/especies.js';
 import { nomeDeAldeia, nomeDeReino } from '../dados/nomes.js';
 import { ED } from '../dados/edificios.js';
 import { escavarRios } from './rios.js';
+import { BAL } from './balanco.js';
 
 export interface OpcoesGeracao {
   /** Fração do mapa que deve ser terra firme (0..1). */
@@ -98,6 +99,55 @@ export function biomaDe(alt: number, temp: number, umid: number): number {
   // seco e escaldante racha o chão
   if (umid < 40) return B.terra_rachada;
   return B.deserto;
+}
+
+/**
+ * Até onde a água doce ainda puxa vegetação, em tiles.
+ *
+ * Generoso: um rio não molha só a margem, ele sustenta a mata do vale inteiro.
+ */
+const ALCANCE_DA_AGUA_DOCE = 24;
+/** Até onde a costa ainda ajuda. Bem menor: água salgada não rega nada. */
+const ALCANCE_DO_MAR = 10;
+/**
+ * Quanto sobra num chão sem água nenhuma por perto.
+ *
+ * Os três números abaixo foram calibrados para a **média** do fator ficar em
+ * torno de 1 sobre a terra firme: a intenção é redistribuir a vegetação, não
+ * criar vegetação. Na primeira tentativa a média saiu em 1,7 e a cobertura de
+ * planta do mundo pulou de 10% para 17,5% do chão — encostando no teto de
+ * ocupação de `BAL.tetoDoChao`, que desliga a rebrota inteira. O mundo ficava
+ * cheio de mata **e** incapaz de repor a que fosse derrubada.
+ */
+const PLANTA_NO_SECO = 0.4;
+/** Quanto a margem de um rio ou lago acrescenta. */
+const GANHO_DA_AGUA_DOCE = 1.05;
+/** Quanto a beira-mar acrescenta. */
+const GANHO_DO_MAR = 0.2;
+
+/**
+ * Quanto aquele ponto favorece árvore e arbusto, pela água que tem por perto.
+ *
+ * A vegetação de verdade não se distribui pelo clima médio da região: ela se
+ * amontoa onde há água de superfície. Mata ciliar acompanhando o rio, capão em
+ * volta do lago, e cerrado ralo no interflúvio seco — é isso que dá leitura de
+ * bacia hidrográfica a um mapa, e é o que faltava aqui: a densidade vinha só do
+ * bioma, então floresta e planície ficavam com a mesma mata do começo ao fim,
+ * ignorando completamente o rio que passava no meio.
+ *
+ * Rio e lago pesam muito mais que o mar de propósito. Água salgada não rega
+ * nada; o que ela dá à costa é umidade de ar, e por isso entra com um ganho
+ * pequeno e um alcance curto.
+ *
+ * A mesma curva serve à geração do mundo e à rebrota da mata, para o desenho
+ * do mapa não mudar de regra depois que a partida começa.
+ */
+export function fatorDeAgua(distDoce: number, distMar: number): number {
+  const doce = Math.max(0, 1 - distDoce / ALCANCE_DA_AGUA_DOCE);
+  const mar = Math.max(0, 1 - distMar / ALCANCE_DO_MAR);
+  // ao quadrado: a queda é rápida perto da margem e lenta lá longe, que é como
+  // a mata ciliar some de verdade
+  return PLANTA_NO_SECO + doce * doce * GANHO_DA_AGUA_DOCE + mar * mar * GANHO_DO_MAR;
 }
 
 /** Gera terreno, clima e biomas no grid do mundo. Não põe criaturas. */
@@ -239,6 +289,15 @@ export function gerarTerreno(mundo: Mundo, op: OpcoesGeracao = {}): void {
   // Depois da limpeza acima, e não antes: o vulcão agora grava em
   // `g.construcao`, e aquele laço zera o mapa inteiro. Plantado antes, ele era
   // apagado no mesmo instante e o mundo ficava sem vulcão nenhum.
+  // Cada mundo tem o seu vento dominante, sorteado aqui. Com uma direção fixa
+  // no código, toda partida começava com as nuvens entrando pela mesma borda.
+  {
+    const ang = rng.f() * Math.PI * 2;
+    mundo.ventoX = Math.cos(ang) * BAL.velocidadeDoVento;
+    mundo.ventoY = Math.sin(ang) * BAL.velocidadeDoVento;
+    mundo.nuvens = [];
+  }
+
   mundo.vulcoes = [];
   mundo.bombas = [];
   abrirVulcoes(g, rng, Math.round(1 + montanhas * 3), mundo.vulcoes);
@@ -318,13 +377,18 @@ function abrirVulcoes(g: Grid, rng: Rng, quantidade: number, centros: number[]):
  */
 function espalharRecursos(g: Grid, rng: Rng, riqueza: number): void {
   // para cada bioma, a lista de recursos que nascem nele
-  const porBioma: Array<Array<{ indice: number; densidade: number; largo: boolean }>> = [];
+  const porBioma: Array<Array<{
+    indice: number; densidade: number; largo: boolean; planta: boolean;
+  }>> = [];
   for (let b = 0; b < biomas.tamanho; b++) porBioma.push([]);
 
   for (const def of recursos.todos()) {
     const indice = recursos.indice(def.id);
     // "largo" é o que exige espaço entre um e outro: árvore de copa aberta
     const largo = def.sprite[0] >= 2 && def.sprite[1] >= 3;
+    // Só o que cria raiz segue a água. Minério está enterrado desde antes de
+    // haver rio: puxá-lo para a margem seria bonito e errado.
+    const planta = REC_MATERIAL[indice] === 'madeira' || REC_MATERIAL[indice] === 'comida';
 
     for (let b = 0; b < biomas.tamanho; b++) {
       if (biomas.porIndice(b).agua) continue;
@@ -333,13 +397,19 @@ function espalharRecursos(g: Grid, rng: Rng, riqueza: number): void {
       // rebrota plantava copiando o vizinho sem olhar o bioma.
       const densidade = REC_DENSIDADE_NO_BIOMA[indice * biomas.tamanho + b];
       if (densidade <= 0) continue;
-      porBioma[b].push({ indice, densidade, largo });
+      porBioma[b].push({ indice, densidade, largo, planta });
     }
   }
 
   // Sorteia a ordem de disputa por tile a cada mundo, senão o primeiro da lista
   // (a árvore) leva sempre a vaga e minério nenhum aparece fora da rocha.
   for (const lista of porBioma) rng.embaralhar(lista);
+
+  // Duas varreduras de distância, feitas aqui e não na criação do terreno: os
+  // rios são escavados depois do relevo, então o mapa de distância calculado lá
+  // em cima não sabe que eles existem.
+  const distDoce = distanciaAte(g, (i) => g.bioma[i] === B.rio || g.bioma[i] === B.lago);
+  const distMar = distanciaAte(g, (i) => g.ehAgua(i));
 
   const viz = new Int32Array(8);
   for (let i = 0; i < g.total; i++) {
@@ -348,8 +418,9 @@ function espalharRecursos(g: Grid, rng: Rng, riqueza: number): void {
     if (g.construcao[i] !== 0 || g.ocupacao[i] !== -1) continue;
     const lista = porBioma[g.bioma[i]];
     if (lista.length === 0) continue;
-    for (const { indice, densidade, largo } of lista) {
-      if (!rng.chance(densidade * riqueza)) continue;
+    const perto = fatorDeAgua(distDoce[i], distMar[i]);
+    for (const { indice, densidade, largo, planta } of lista) {
+      if (!rng.chance(densidade * riqueza * (planta ? perto : 1))) continue;
       // Copa larga precisa de espaço: sem esta folga, uma mata de árvores de
       // três tiles de largura vira uma mancha verde só, sem árvore nenhuma
       // reconhecível dentro dela.
@@ -384,12 +455,23 @@ export function semearRecursosEmMundoAntigo(mundo: Mundo): void {
 
 /** Distância aproximada, em tiles, de cada ponto até a água mais próxima. */
 function distanciaAteAgua(g: Grid): Int32Array {
+  return distanciaAte(g, (i) => g.ehAgua(i));
+}
+
+/**
+ * Distância em tiles de cada ponto até o tile mais próximo que passe no teste.
+ *
+ * Inundação em largura a partir de todas as origens de uma vez: uma passada só
+ * pelo mapa, sem ordenação e sem fila de prioridade, porque o custo de todo
+ * passo é o mesmo.
+ */
+function distanciaAte(g: Grid, ehOrigem: (i: number) => boolean): Int32Array {
   const dist = new Int32Array(g.total).fill(0x7fffffff);
   const fila = new Int32Array(g.total);
   let cabeca = 0;
   let cauda = 0;
   for (let i = 0; i < g.total; i++) {
-    if (g.ehAgua(i)) {
+    if (ehOrigem(i)) {
       dist[i] = 0;
       fila[cauda++] = i;
     }
@@ -473,7 +555,7 @@ function indiceBiomaSeguro(id: string): number {
 export function fundarCivilizacoesIniciais(mundo: Mundo, quantidade: number): void {
   const g = mundo.grid;
   const rng = mundo.rng;
-  const povos = [...ESPECIES_CIVILIZADAS];
+  const povos = [...ESPECIES_FUNDADORAS];
   rng.embaralhar(povos);
 
   const jaUsados: Array<[number, number]> = [];
@@ -525,6 +607,14 @@ export function fundarCivilizacoesIniciais(mundo: Mundo, quantidade: number): vo
     // Primeiros moradores. A idade vai por fração da longevidade da espécie:
     // um valor fixo em ticks fazia os orcs, que vivem menos, começarem a
     // partida já velhos — e o povo inteiro morria de velhice sem ter um filho.
+    // Os fundadores não são um bloco só: são **duas famílias**, e uma delas é
+    // a casa real. É o que dá à sucessão algo para disputar desde o primeiro
+    // minuto — se a linhagem do rei se extinguir, a coroa cai para a outra.
+    const casaReal = mundo.novaFamilia();
+    const casaRival = mundo.novaFamilia();
+    const claDoPovo = mundo.criarCla(especieIdx).id;
+    reino.casaReal = casaReal;
+
     const quantos = rng.intEntre(8, 12);
     for (let k = 0; k < quantos; k++) {
       const cx = x + rng.entre(-2, 2);
@@ -532,9 +622,23 @@ export function fundarCivilizacoesIniciais(mundo: Mundo, quantidade: number): vo
       const idade = rng.entre(def.longevidade[0] * 0.16, def.longevidade[0] * 0.34);
       const c = mundo.nascer(especieIdx, cx, cy, idade);
       if (c < 0) continue;
-      mundo.criaturas.aldeia[c] = aldeia.id;
-      mundo.criaturas.reino[c] = reino.id;
+      const cr = mundo.criaturas;
+      cr.aldeia[c] = aldeia.id;
+      cr.reino[c] = reino.id;
+      cr.familia[c] = k < 3 ? casaReal : casaRival;
+      cr.cla[c] = claDoPovo;
+      cr.fidelidade[c] = 80;
+      // a casa real começa com algum ouro: é o que a faz nascer no comando
+      cr.riqueza[c] = k < 3 ? rng.entre(18, 30) : rng.entre(2, 10);
       aldeia.populacao++;
+      if (reino.rei < 0 && k === 0) {
+        reino.rei = c;
+        reino.reiGer = cr.geracao[c];
+      }
+      if (aldeia.governante < 0 && k === 0) {
+        aldeia.governante = c;
+        aldeia.governanteGer = cr.geracao[c];
+      }
     }
   }
 }
