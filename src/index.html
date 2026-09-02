@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorldBox 2</title>
+<link rel="stylesheet" href="./ui/estilo.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!--
+    O mapa ocupa a tela toda, e tudo o mais mora na barra de baixo. É o
+    arranjo do WorldBox, e a razão é simples: num jogo em que se fica olhando o
+    mundo, cada painel encostado na lateral é um pedaço de mundo que se deixa
+    de ver. A barra é sempre visível e tem abas — o que estava no cabeçalho
+    virou a aba de configurações.
+  -->
+  <main id="palco">
+    <canvas id="tela"></canvas>
+    <div id="aviso-carregando" hidden>gerando mundo…</div>
+    <div id="marca-flutuante">WORLDBOX<span>2</span></div>
+  </main>
+
+  <footer id="barra">
+
+    <!-- a gaveta: o conteúdo da aba escolhida -->
+    <div id="gaveta">
+      <canvas id="minimapa" width="196" height="110"></canvas>
+
+      <div id="lado-direito">
+      <div id="conteudo-aba">
+
+        <section class="aba" data-aba="terreno">
+          <div class="poderes-linha" id="poderes-terreno"></div>
+        </section>
+
+        <section class="aba" data-aba="vida" hidden>
+          <div class="poderes-linha" id="poderes-vida"></div>
+          <div id="bloco-especie" hidden>
+            <label for="sel-especie">Criatura</label>
+            <select id="sel-especie" size="4"></select>
+          </div>
+        </section>
+
+        <section class="aba" data-aba="destruicao" hidden>
+          <div class="poderes-linha" id="poderes-destruicao"></div>
+        </section>
+
+        <section class="aba" data-aba="reino" hidden>
+          <div class="poderes-linha" id="poderes-reino"></div>
+        </section>
+
+        <section class="aba" data-aba="inspetor" hidden>
+          <div class="colunas">
+            <div id="inspetor" class="vazio">Clique em algo no mapa.</div>
+            <div id="bloco-comando" hidden>
+              <h3>Ordens</h3>
+              <div id="comando"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="aba" data-aba="mundo" hidden>
+          <div class="colunas">
+            <div id="estatisticas"></div>
+            <div class="coluna-cronica">
+              <h3>Crônica</h3>
+              <ul id="log"></ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="aba" data-aba="config" hidden>
+          <div class="config-linhas">
+            <div class="config-grupo">
+              <h3>Mostrar</h3>
+              <label class="alternador"><input type="checkbox" id="chk-territorio" checked> territórios</label>
+              <label class="alternador"><input type="checkbox" id="chk-nomes" checked> nomes</label>
+              <label class="alternador"><input type="checkbox" id="chk-desempenho"> desempenho</label>
+            </div>
+            <div class="config-grupo">
+              <h3>Pincel</h3>
+              <input type="range" id="rng-raio" min="1" max="40" value="4">
+              <div class="valor"><span id="lbl-raio">4</span> tiles</div>
+            </div>
+            <div class="config-grupo">
+              <h3>Mundo</h3>
+              <button id="btn-novo" class="btn">Novo mundo</button>
+              <button id="btn-salvar" class="btn">Salvar</button>
+              <button id="btn-carregar" class="btn">Carregar</button>
+            </div>
+          </div>
+        </section>
+
+      </div>
+      <p id="descricao-poder" class="dica">Clique numa criatura para acompanhar a vida dela.</p>
+      </div>
+
+      <div id="desempenho" hidden></div>
+    </div>
+
+    <!-- a régua de baixo: tempo, números do mundo e as abas -->
+    <div id="regua">
+      <div class="grupo-tempo" role="group" aria-label="Velocidade do tempo">
+        <button data-vel="0" class="btn-vel" title="Pausar (espaço)">❚❚</button>
+        <button data-vel="1" class="btn-vel ativo" title="Velocidade normal (1)">▶</button>
+        <button data-vel="2" class="btn-vel" title="Rápido (2)">▶▶</button>
+        <button data-vel="4" class="btn-vel" title="Muito rápido (3)">▶▶▶</button>
+        <button data-vel="8" class="btn-vel" title="Absurdo (4)">▶▶▶▶</button>
+      </div>
+
+      <div class="relogio">
+        <span class="rotulo">ANO</span><b id="ano">0</b>
+        <span class="rotulo">POPULAÇÃO</span><b id="pop-topo">0</b>
+        <span class="rotulo">REINOS</span><b id="reinos-topo">0</b>
+        <span class="rotulo">GUERRAS</span><b id="guerras-topo">0</b>
+      </div>
+
+      <nav id="abas" role="tablist">
+        <button class="aba-btn ativa" data-alvo="terreno" title="Terreno">⛰<span>terreno</span></button>
+        <button class="aba-btn" data-alvo="vida" title="Vida">✿<span>vida</span></button>
+        <button class="aba-btn" data-alvo="destruicao" title="Destruição">⚡<span>destruição</span></button>
+        <button class="aba-btn" data-alvo="reino" title="Reinos">⚑<span>reinos</span></button>
+        <button class="aba-btn" data-alvo="inspetor" title="Inspetor">⌖<span>inspetor</span></button>
+        <button class="aba-btn" data-alvo="mundo" title="O mundo">◍<span>mundo</span></button>
+        <button class="aba-btn" data-alvo="config" title="Configurações">⚙<span>ajustes</span></button>
+      </nav>
+    </div>
+
+  </footer>
+
+</div>
+
+<dialog id="dlg-novo">
+  <form method="dialog">
+    <h2>Novo mundo</h2>
+
+    <label>Semente
+      <input type="text" id="in-semente" placeholder="deixe vazio para sortear">
+    </label>
+
+    <label>Tamanho do mapa
+      <select id="in-tamanho"></select>
+    </label>
+
+    <label>Quanto do mapa é terra
+      <input type="range" id="in-terra" min="15" max="70" value="40">
+      <output id="out-terra">40%</output>
+    </label>
+
+    <label>Bichos
+      <input type="range" id="in-animais" min="0" max="30" value="10">
+      <output id="out-animais">normal</output>
+    </label>
+
+    <label>Montanhas
+      <input type="range" id="in-montanhas" min="0" max="100" value="30">
+      <output id="out-montanhas">médias</output>
+    </label>
+
+    <label>Formato do mundo
+      <input type="range" id="in-ilhas" min="0" max="100" value="15">
+      <output id="out-ilhas">um continente</output>
+    </label>
+
+    <label>Clima
+      <input type="range" id="in-clima" min="-100" max="100" value="0">
+      <output id="out-clima">temperado</output>
+    </label>
+
+    <label>Chuva
+      <input type="range" id="in-umidade" min="0" max="100" value="50">
+      <output id="out-umidade">normal</output>
+    </label>
+
+    <label>Riqueza mineral e florestas
+      <input type="range" id="in-riqueza" min="20" max="200" value="100">
+      <output id="out-riqueza">normal</output>
+    </label>
+
+    <label>Reinos no começo
+      <input type="range" id="in-civs" min="0" max="8" value="4">
+      <output id="out-civs">4</output>
+    </label>
+
+    <label class="caixa">
+      <input type="checkbox" id="in-migracao" checked>
+      Espécies raras recebem reforço de fora
+      <small>Desligue para ver extinções definitivas: quem sumir, sumiu.</small>
+    </label>
+
+    <menu>
+      <button value="cancelar" class="btn">Cancelar</button>
+      <button value="criar" id="btn-criar" class="btn primario">Criar mundo</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="dlg-saves">
+  <form method="dialog">
+    <h2 id="titulo-saves">Mundos salvos</h2>
+    <div id="lista-saves"></div>
+    <p id="onde-ficam" class="onde-ficam"></p>
+    <label id="campo-nome-save">Nome
+      <input type="text" id="in-nome-save" value="mundo">
+    </label>
+    <menu>
+      <button value="cancelar" class="btn">Fechar</button>
+      <button value="ok" id="btn-confirmar-save" class="btn primario">Salvar</button>
+    </menu>
+  </form>
+</dialog>
+
+<script type="module" src="./main.ts"></script>
+</body>
+</html>

@@ -1,0 +1,639 @@
+/*
+  Interface do WorldBox 2.
+
+  Direção: painel de ferramenta, não site. A tela é do mundo; tudo o que é
+  interface fica em torno, escuro e discreto, com metadado em fonte mono
+  pequena e três níveis de cinza no texto para dar hierarquia sem aumentar
+  tamanho nenhum. Cor forte só onde ela carrega informação — a cor de cada
+  reino e o vermelho de guerra.
+*/
+
+:root {
+  --fundo: #08090a;
+  --painel: #0e1013;
+  --painel-alto: #14171c;
+  --linha: #21262e;
+  --texto: #e8ecf2;
+  --texto-2: #9aa4b2;
+  --texto-3: #616b7a;
+  --acao: #4a7ec8;
+  --perigo: #d05a4a;
+  --ok: #4fbf72;
+
+  /* gaveta (156) + régua (40) — ver a nota em #app */
+  --barra-altura: 196px;
+
+  --mono: ui-monospace, "Cascadia Mono", "Consolas", monospace;
+  --sans: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--sans);
+  font-size: 13px;
+  user-select: none;
+}
+
+#app {
+  /*
+    Duas faixas: o mundo em cima, ocupando tudo o que sobrar, e a barra em
+    baixo. Não há mais coluna lateral — cada painel encostado na lateral era um
+    pedaço de mundo a menos na tela, e num jogo em que se fica olhando o mapa
+    isso custa caro.
+  */
+  display: grid;
+  /*
+    A barra tem altura **fixa**, e não `auto`.
+    Com `auto` o tamanho dela vinha do conteúdo, e uma linha de texto a mais na
+    dica da ferramenta encolhia o mapa; encolher o mapa redimensiona o canvas,
+    o que dispara outro cálculo de layout, e o navegador reclamava de laço de
+    `ResizeObserver` — que o jogo mostrava como erro fatal. Altura fixa corta o
+    laço na raiz: o que estiver dentro da barra não muda o tamanho do mundo.
+  */
+  grid-template-rows: 1fr var(--barra-altura);
+  height: 100%;
+}
+
+/*
+  O jogo é feito para janela larga (a do aplicativo abre em 1600×900), mas não
+  pode desmontar quando alguém encolhe: a barra reduz a altura da gaveta e os
+  rótulos das abas somem antes dos ícones.
+*/
+@media (max-height: 760px) {
+  :root { --barra-altura: 168px; }
+  #gaveta { height: 128px; }
+}
+@media (max-width: 1080px) {
+  .aba-btn span { display: none; }
+  .relogio .rotulo { display: none; }
+}
+
+/* ------------------------------------------------------------- a barra */
+
+#barra {
+  height: var(--barra-altura);
+  overflow: hidden;
+  background: var(--painel);
+  border-top: 1px solid var(--linha);
+  display: flex;
+  flex-direction: column;
+  /* a sombra separa a barra do mundo sem precisar de moldura */
+  box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.45);
+}
+
+#gaveta {
+  height: 156px;
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px 6px;
+  min-height: 0;
+}
+
+/*
+  O minimapa fica à esquerda e todo o resto empilha numa coluna à direita dele.
+  Sem esta coluna, a dica da ferramenta era irmã do conteúdo dentro de uma
+  linha flexível e roubava metade da largura — as trinta ferramentas se
+  espremiam em duas colunas com rolagem enquanto sobrava meia barra vazia.
+*/
+#lado-direito {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#conteudo-aba {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+}
+
+.aba {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+.aba[hidden] { display: none; }
+
+/* duas colunas dentro de uma aba: inspetor + ordens, estatísticas + crônica */
+.colunas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  min-height: 0;
+  height: 100%;
+}
+.colunas > * { min-width: 0; overflow-y: auto; }
+.coluna-cronica { display: flex; flex-direction: column; min-height: 0; }
+
+.aba h3 {
+  margin: 0 0 6px;
+  font: 500 10px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--texto-3);
+}
+
+#descricao-poder.dica {
+  margin: 0;
+  padding: 0;
+  flex: none;
+  font-size: 11px;
+  color: var(--texto-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --------------------------------------------------------- a régua e as abas */
+
+#regua {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 12px;
+  height: 40px;
+  border-top: 1px solid var(--linha);
+  background: var(--painel-alto);
+}
+
+#abas {
+  margin-left: auto;
+  display: flex;
+  gap: 2px;
+}
+
+.aba-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--texto-3);
+  font: 400 11px/1 var(--sans);
+  cursor: pointer;
+}
+.aba-btn span { letter-spacing: 0.02em; }
+.aba-btn:hover { color: var(--texto-2); background: #171b21; }
+.aba-btn.ativa {
+  color: var(--texto);
+  background: var(--painel);
+  border-color: var(--linha);
+}
+
+/* ----------------------------------------------------- ajustes na aba config */
+
+.config-linhas { display: flex; gap: 18px; flex-wrap: wrap; }
+.config-grupo { display: flex; flex-direction: column; gap: 5px; min-width: 108px; }
+.config-grupo .btn { width: 100%; height: 26px; padding: 0 8px; }
+.config-grupo .valor { font: 400 11px/1 var(--mono); color: var(--texto-3); }
+
+/* a marca sai do cabeçalho e vira uma discrição no canto do mapa */
+
+#marca-flutuante {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  font: 600 12px/1 var(--mono);
+  letter-spacing: 0.16em;
+  color: rgba(232, 236, 242, 0.34);
+  pointer-events: none;
+}
+#marca-flutuante span { color: rgba(74, 126, 200, 0.7); margin-left: 3px; }
+
+/* ---------------------------------------------------------- tempo e relógio */
+
+.grupo-tempo { display: flex; gap: 2px; }
+
+.btn-vel {
+  background: var(--painel-alto);
+  border: 1px solid var(--linha);
+  color: var(--texto-3);
+  font-size: 9px;
+  letter-spacing: -1px;
+  padding: 5px 8px;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.btn-vel:hover { color: var(--texto-2); }
+.btn-vel.ativo {
+  color: var(--texto);
+  border-color: var(--acao);
+  background: #16233a;
+}
+
+.relogio {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.relogio .rotulo {
+  color: var(--texto-3);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+}
+.relogio b { color: var(--texto); margin-right: 10px; font-weight: 500; }
+
+.acoes { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+.alternador {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--texto-3);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.alternador input { accent-color: var(--acao); }
+
+.btn {
+  background: var(--painel-alto);
+  border: 1px solid var(--linha);
+  color: var(--texto-2);
+  padding: 6px 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+}
+.btn:hover { color: var(--texto); border-color: #333b47; }
+.btn.primario { background: var(--acao); border-color: var(--acao); color: #fff; }
+
+
+.secao h2 {
+  margin: 0 0 9px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: var(--texto-3);
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------ ferramentas */
+.grupo-poder > h3 {
+  margin: 0 0 5px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  color: var(--texto-3);
+}
+
+.poderes-linha {
+  /*
+    Em faixa que quebra, e não em grade de quatro colunas.
+    A grade fazia sentido numa coluna lateral estreita; na barra de baixo ela
+    espremia trinta ferramentas em três colunas com rolagem, enquanto sobrava
+    meia tela de espaço vazio ao lado. Aqui os botões preenchem a largura e
+    descem para a fileira seguinte quando acabam.
+  */
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px;
+}
+
+.poder {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  background: var(--painel-alto);
+  border: 1px solid var(--linha);
+  border-radius: 4px;
+  color: var(--texto-2);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 0;
+}
+.poder:hover { color: var(--texto); border-color: #333b47; }
+.poder.ativo {
+  border-color: var(--acao);
+  background: #16233a;
+  color: #fff;
+}
+
+#sel-especie {
+  width: 100%;
+  background: var(--painel-alto);
+  color: var(--texto-2);
+  border: 1px solid var(--linha);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px;
+}
+#sel-especie option { padding: 2px 4px; }
+
+#rng-raio, #dlg-novo input[type=range] { width: 100%; accent-color: var(--acao); }
+
+.valor {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--texto-3);
+  margin-top: 3px;
+}
+
+.secao.dica p {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--texto-3);
+}
+
+/* ------------------------------------------------------------------ palco */
+
+#palco {
+  position: relative;
+  overflow: hidden;
+  background: #05070c;
+}
+#tela { display: block; width: 100%; height: 100%; cursor: crosshair; }
+#tela.arrastando { cursor: grabbing; }
+
+/* `display` no CSS vence o atributo `hidden`, então ele precisa ser explícito */
+#aviso-carregando[hidden] { display: none; }
+
+#aviso-carregando {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(8, 9, 10, 0.85);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--texto-2);
+}
+
+/* --------------------------------------------------------------- inspetor */
+
+#inspetor.vazio { color: var(--texto-3); font-size: 12px; }
+
+.linha-dado {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 0;
+}
+.linha-dado span { color: var(--texto-3); }
+.linha-dado b { color: var(--texto-2); font-weight: 500; }
+
+.titulo-inspetor {
+  font-size: 15px;
+  margin-bottom: 2px;
+}
+.sub-inspetor {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--texto-3);
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
+.barra {
+  height: 4px;
+  background: var(--painel-alto);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 3px 0 7px;
+}
+.barra > i { display: block; height: 100%; }
+
+/* ------------------------------------------------------------ comando */
+
+.titulo-comando {
+  margin: 10px 0 5px;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  color: var(--texto-3);
+}
+.titulo-comando:first-child { margin-top: 0; }
+
+.botoes-comando { display: flex; flex-wrap: wrap; gap: 3px; }
+
+.btn-comando {
+  background: var(--painel-alto);
+  border: 1px solid var(--linha);
+  color: var(--texto-2);
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.btn-comando:hover { color: var(--texto); border-color: #38414f; }
+.btn-comando.ativo { border-color: var(--acao); background: #16233a; color: #fff; }
+
+.linha-diplomacia {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 6px;
+  align-items: center;
+  padding: 5px 0;
+  border-bottom: 1px solid #16191e;
+  font-size: 11.5px;
+}
+.linha-diplomacia .estado {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-style: normal;
+  color: var(--texto-3);
+  letter-spacing: 0.06em;
+}
+.linha-diplomacia .estado.guerra { color: var(--perigo); }
+.linha-diplomacia .estado.paz { color: var(--ok); }
+.linha-diplomacia .botoes-comando { grid-column: 1 / -1; }
+
+.aviso-comando {
+  margin: 9px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ok);
+}
+
+/* --------------------------------------------------------- estatísticas */
+
+#estatisticas { display: flex; flex-direction: column; gap: 1px; }
+
+.especie-linha {
+  display: grid;
+  grid-template-columns: 9px 1fr auto;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--texto-2);
+}
+.especie-linha i {
+  width: 9px; height: 9px;
+  border-radius: 2px;
+  display: block;
+}
+.especie-linha b { font-family: var(--mono); font-size: 11px; font-weight: 500; }
+
+/* -------------------------------------------------------------------- log */
+
+#log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+#log li {
+  padding: 3px 0;
+  border-bottom: 1px solid #16191e;
+  color: var(--texto-2);
+}
+#log li .quando {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--texto-3);
+  margin-right: 5px;
+}
+#log li.guerra { color: var(--perigo); }
+#log li.paz { color: var(--ok); }
+
+/* ----------------------------------------------------------------- rodapé */
+
+#minimapa {
+  width: 196px;
+  height: 110px;
+  flex: none;
+  align-self: flex-start;
+  border: 1px solid var(--linha);
+  border-radius: 4px;
+  background: #05070c;
+  image-rendering: pixelated;
+  cursor: crosshair;
+}
+
+#desempenho {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  font: 400 11px/1.5 var(--mono);
+  color: var(--texto-3);
+  text-align: right;
+  pointer-events: none;
+}
+#desempenho[hidden] { display: none; }
+#desempenho b { color: var(--texto-2); font-weight: 500; }
+
+/* --------------------------------------------------------------- diálogos */
+
+dialog {
+  background: var(--painel);
+  border: 1px solid var(--linha);
+  border-radius: 8px;
+  color: var(--texto);
+  padding: 20px;
+  width: 380px;
+  font-family: var(--sans);
+}
+dialog::backdrop { background: rgba(4, 5, 7, 0.7); }
+dialog h2 { margin: 0 0 16px; font-size: 16px; font-weight: 500; }
+dialog label {
+  display: block;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--texto-2);
+}
+dialog input[type=text], dialog select {
+  display: block;
+  width: 100%;
+  margin-top: 5px;
+  background: var(--painel-alto);
+  border: 1px solid var(--linha);
+  border-radius: 4px;
+  color: var(--texto);
+  padding: 7px 9px;
+  font-family: inherit;
+  font-size: 13px;
+}
+dialog label.caixa {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: center;
+  cursor: pointer;
+}
+dialog label.caixa input { accent-color: var(--acao); }
+dialog label.caixa small {
+  grid-column: 2;
+  color: var(--texto-3);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+dialog output {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--texto-3);
+}
+dialog menu {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding: 0;
+}
+
+/* mesma armadilha do aviso de carregamento: `display` vence o atributo hidden */
+#campo-nome-save[hidden] { display: none; }
+
+#lista-saves { max-height: 240px; overflow-y: auto; margin-bottom: 10px; }
+.onde-ficam {
+  margin: 0 0 14px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--texto-3);
+  word-break: break-all;
+}
+.save-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--linha);
+  border-radius: 4px;
+  margin-bottom: 5px;
+  cursor: pointer;
+  background: var(--painel-alto);
+}
+.save-item:hover { border-color: var(--acao); }
+.save-item .quando {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--texto-3);
+}

@@ -1,0 +1,51 @@
+{
+  "name": "worldbox-2",
+  "version": "0.1.0",
+  "description": "WorldBox 2 — sandbox de simulação de mundo: terreno, animais e civilizações.",
+  "type": "module",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "web": "vite",
+    "build": "vite build",
+    "app": "npm run build && electron .",
+    "dist": "npm run build && electron-builder --win",
+    "sim": "tsx tools/simular.ts",
+    "typecheck": "tsc --noEmit",
+    "diag": "tsx tools/diagnostico.ts",
+    "testar-app": "vite build && node scripts/testar-app.mjs",
+    "test": "tsx tools/testar.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3",
+    "vite": "^6.3.5"
+  },
+  "build": {
+    "appId": "com.felipe.worldbox2",
+    "productName": "WorldBox 2",
+    "files": [
+      "electron/**/*",
+      "dist/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    }
+  }
+}
