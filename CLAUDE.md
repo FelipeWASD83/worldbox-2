@@ -784,18 +784,24 @@ Medido em 01/09/2026, mapa médio (384×216):
   (`Mundo.tetoPorEspecie`) é o que define isso, e é o que o controle de "bichos"
   na criação do mundo regula. O limite de vizinhança sozinho não segura
   população — ele só espalha.
-- 188 ferramentas em oito abas, 21 tipos de construção, 19 tecnologias,
+- 188 ferramentas em oito abas, 20 construções, 19 tecnologias,
   19 traços, 15 recursos, 10 equipamentos,
   25 biomas, 20 espécies, 8 tamanhos de mapa (até 2800×1600, teto de 130 mil
   criaturas vivas — o planeta inteiro gera em 1,6 s).
+
+  > Contado em `src/dados/` em 09/09/2026: `edificios.ts` tem 22 entradas, mas
+  > duas não são obra de ninguém — o `vulcao` é `natural: true` e a `ruina` tem
+  > `nivelMinimo: 99`. Sobram **20 construções** que uma civilização levanta.
+  > Dizia "21" aqui e "dezenove" três linhas abaixo; nenhum dos dois batia.
 - Rede de água doce por acumulação de fluxo: ~2% do chão em rio, largura de 1
   a 7 tiles, lagos, e toda a rede desaguando no mar.
 - O chão para de encher: mata, fruta e pedra têm teto próprio e sobram uns
   dois terços de terreno livre por quanto tempo o mundo rodar.
-- Em vinte mil ticks num mapa médio: ~39 aldeias, e **os dezenove tipos de
-  construção aparecem no mundo** — 748 fazendas, 252 casas, 50 minas, 16
-  mercados, 12 templos, 9 prefeituras, 8 bibliotecas, 6 bancos, 5 castelos —
-  com comércio acontecendo.
+- Em vinte mil ticks num mapa médio: ~39 aldeias, e **todo tipo de construção
+  que existia na hora da medição apareceu no mundo** (eram dezenove) — 748
+  fazendas, 252 casas, 50 minas, 16 mercados, 12 templos, 9 prefeituras, 8
+  bibliotecas, 6 bancos, 5 castelos — com comércio acontecendo. Hoje são vinte:
+  medir de novo antes de repetir o número.
 - Do crescimento das civilizações, 60% nasce dentro das casas e 40% é gente que
   chega de fora (`BAL.imigracaoParaAldeia`). Os dois caminhos existem de
   propósito: sem o segundo, a vila sem casa nunca sai do lugar.
@@ -817,9 +823,9 @@ Medido em 01/09/2026, mapa médio (384×216):
   registrado na crônica.
 - Tecnologia de pé: num mapa médio os reinos entram na era das aldeias por
   volta do tick 4.200, na era de reino por volta de 18.000 e na imperial por
-  volta de 25.000, e quarenta mil ticks bastam para os dezenove tipos de
-  construção aparecerem no mundo — inclusive biblioteca, mercado, templo e
-  quartel, que dependem das descobertas mais caras.
+  volta de 25.000, e quarenta mil ticks bastam para todos os tipos de
+  construção da época (dezenove) aparecerem no mundo — inclusive biblioteca,
+  mercado, templo e quartel, que dependem das descobertas mais caras.
 - Genética de pé: num mapa médio, cerca de 70% dos inteligentes carrega pelo
   menos um traço, os dezenove aparecem, e o imortal sai um a cada poucas
   centenas. Mestiço nasce sozinho onde dois povos tolerados convivem — de três a
