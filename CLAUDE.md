@@ -572,8 +572,14 @@ sistema próprio lendo os mesmos campos.
 O que já está no lugar esperando ser usado:
 - `Aldeia.bonusMadeira` e `bonusPedra` medem o que o entorno rende. É o começo de
   oferta e preço.
-- `Reino.era` (0 a 3) sobe com a população e ainda não faz nada além de aparecer
-  na crônica — é o gancho óbvio para eras tecnológicas.
+- `Reino.era` (0 a 3) deixou de ser gancho em 02/09/2026 (fase 4 do update de
+  política): não sobe mais com a população, é a era da tecnologia mais avançada
+  que o reino domina. Quem a move é `aprender`, em `src/sim/conhecimento.ts`
+  (o poder *Esquecer* recalcula para baixo, e o reino rebelde herda a do reino
+  de origem), e ela aparece no inspetor, nas ordens e na crônica. Ver
+  "Tecnologia" na seção 3.
+  Mecânica nova que dependa de progresso pergunta o que o reino sabe
+  (`mundo.reinoSabe`), como fazem as obras e o equipamento, e não a era.
 - `Reino.relacoes` é um mapa de -100 a +100 por par de reinos; alianças e
   comércio cabem aí sem mudar estrutura.
 - `Criaturas.marcas` tem bits livres para profissão, e `xp` já acumula.
@@ -776,7 +782,13 @@ quem as matou, que é a única forma honesta de saber se o ajuste ajudou.
 
 ## 6. Estado atual
 
-Medido em 01/09/2026, mapa médio (384×216):
+Medido em 01/09/2026, mapa médio (384×216). As linhas do update de política,
+da genética e das ferramentas (a contagem de ferramentas, tecnologias e traços,
+névoa diplomática, casus belli, tecnologia, genética, clãs e rebelião,
+território, interface, cargos e portos) entraram em 02/09/2026, no commit
+`b014902`, e são daquela rodada; a contagem de construções foi conferida em
+09/09/2026 (nota abaixo). Nenhum código mudou depois de 02/09/2026, e nada foi
+medido de novo desde então.
 
 - 144 fps no aplicativo, inclusive com o mapa aproximado e o chão desenhado
   tile a tile.
@@ -860,7 +872,10 @@ Medido em 01/09/2026, mapa médio (384×216):
   semente: é comum um povo dominar e outro sumir (a refundação traz de volta).
 - Estações do ano não existem. **Clima existe**: nuvens atravessam o mundo com o
   vento, chovem (apagando incêndio) e nevam onde faz frio (`src/sim/clima.ts`).
-- Não há conhecimento nem tecnologia: `Reino.era` sobe com a população e ainda
-  só aparece na crônica. É o gancho pronto para eras tecnológicas.
+- Conhecimento e tecnologia existem desde 02/09/2026 (ver "Tecnologia" na
+  seção 3, e "Tecnologia de pé" acima). O que sobrou daquela pendência está no
+  item 3 do `ROTEIRO.md`: **banco** e **poço** ficam de pé no mapa sem efeito
+  mecânico (no código, só aparecem na fila de obras), e o sistema de
+  **profissões** não existe.
 - O comércio usa preço fixo (`VALOR_MATERIAL`); oferta e procura ainda não mexem
   no preço.

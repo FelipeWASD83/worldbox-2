@@ -736,7 +736,7 @@ function nomeDoBioma(indice: number): string {
   return biomaNomes[indice] ?? '';
 }
 
-/** Recalcula população e era dos reinos, e distribui soldados. */
+/** Recalcula a população dos reinos e distribui soldados (a era vem do conhecimento, em conhecimento.ts). */
 function atualizarReinos(mundo: Mundo): void {
   const c = mundo.criaturas;
 
