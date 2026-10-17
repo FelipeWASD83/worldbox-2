@@ -1049,7 +1049,7 @@ trinta mil ticks, mapa médio), antes e depois da versão:
   estão no `balanco.ts` e nos dados dos povos; medir com `npm run equilibrio`
   antes de qualquer um, e com doze sementes ou mais: com menos, o ruído é
   maior que o efeito.
-- A release v2.1.0 foi publicada em 17/10/2026 (a pedido do Felipe) e o
+- As releases v2.1.0 e v2.1.1 foram publicadas em 17/10/2026 (a pedido do Felipe; a 2.1.1 é a do ícone) e o
   pacote baixado do GitHub confere com o SHA-256 dela. A troca de uma versão
   publicada para outra ainda não aconteceu de verdade: só vai dar para ver
   quando sair a próxima. O teste com a janela usou um GitHub de mentira.
