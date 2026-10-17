@@ -21,7 +21,7 @@ const RAIZ = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** O que entra no pacote: arquivos soltos e pastas inteiras. */
 const ARQUIVOS = ['package.json', 'CHANGELOG.md', 'LICENSE', 'README.md'];
-const PASTAS = ['dist', 'instalador'];
+const PASTAS = ['dist', 'instalador', 'icone'];
 const DO_ELECTRON = ['main.js', 'preload.cjs', 'atualizador.js', 'zip.js'];
 
 function listarPasta(rel: string): string[] {

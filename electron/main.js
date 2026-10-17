@@ -107,6 +107,7 @@ function criarJanela() {
     autoHideMenuBar: true,
     show: false,
     title: 'WorldBox 2',
+    icon: path.join(RAIZ, 'icone', 'icone.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -472,6 +473,7 @@ async function tirarPrints(janela, pasta) {
   app.exit(0);
 }
 
+app.setAppUserModelId('com.felipe.worldbox2');
 app.whenReady().then(() => {
   aplicarPolitica();
   const janela = criarJanela();

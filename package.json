@@ -1,6 +1,6 @@
 {
   "name": "worldbox-2",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "WorldBox 2 — sandbox de simulação de mundo: terreno, animais e civilizações.",
   "type": "module",
   "private": true,

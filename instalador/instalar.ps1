@@ -159,6 +159,10 @@ if (Test-Path -LiteralPath $dirInicio) { Remove-Item -LiteralPath $dirInicio -Re
 Copy-Item -LiteralPath (Join-Path $dirApp 'instalador\inicio') -Destination $dirInicio -Recurse
 $estado = @{ versao = $versaoJogo; emTeste = $false } | ConvertTo-Json
 [IO.File]::WriteAllText((Join-Path $Pasta 'estado.json'), $estado, (New-Object Text.UTF8Encoding($false)))
+# O icone fica numa pasta que a troca de versao nao mexe (o atalho aponta para ele).
+$icoPacote = Join-Path $dirApp 'icone\icone.ico'
+$icoFixo = Join-Path $Pasta 'icone.ico'
+if (Test-Path -LiteralPath $icoPacote) { Copy-Item -LiteralPath $icoPacote -Destination $icoFixo -Force }
 Write-Host "Jogo $versaoJogo em $dirApp"
 
 # ------------------------------------------------------------------ 4. atalhos
@@ -174,7 +178,7 @@ if ($SemAtalho) {
     $l.TargetPath = $exe
     $l.Arguments = "`"$dirInicio`""
     $l.WorkingDirectory = $Pasta
-    $l.IconLocation = "$exe,0"
+    $l.IconLocation = if (Test-Path -LiteralPath $icoFixo) { "$icoFixo,0" } else { "$exe,0" }
     $l.Description = 'WorldBox 2'
     $l.Save()
   }

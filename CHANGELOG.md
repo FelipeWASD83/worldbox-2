@@ -2,6 +2,12 @@
 
 A versão mais nova fica em cima. Ela mora aqui e no `package.json`, sempre com o mesmo número.
 
+## 2.1.1 (17/10/2026)
+
+**Corrigido**
+
+- **O jogo instalado tem ícone próprio.** O atalho "WorldBox 2" (área de trabalho e menu Iniciar) e a janela mostravam o ícone do Electron; agora mostram um mundo em blocos, desenhado para o jogo. Quem já tem a cópia instalada: atualize pelo botão da aba de ajustes (a janela e a barra de tarefas pegam o ícone novo) e, para o atalho, rode o `instalar.bat` de novo (os mundos salvos não são mexidos).
+
 ## 2.1.0 (17/10/2026)
 
 **Novo**

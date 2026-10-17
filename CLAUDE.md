@@ -320,7 +320,10 @@ electron/   o Electron oficial, conferido pelo SHASUMS256 da release dele
 inicio/     o inicializador (instalador/inicio), que o atualizador NUNCA troca
 app/        a versão em uso; nova/ é a baixada, anterior/ a de antes
 estado.json versão, se está em teste, e se a última troca foi desfeita
+icone.ico   o ícone dos atalhos (cópia do icone/icone.ico do pacote; fica fora de app/ para a troca de versão não mexer)
 ```
+
+**Ícone (2.1.1):** o desenho (um mundo em blocos) é gerado por `_organizacao/atalhos/desenhar_icones.py` + `gerar_icones.py` na raiz da pasta e copiado para `icone/` (`icone.ico` e `icone.png`, versionados e levados no pacote). A janela usa `icone/icone.ico` (`BrowserWindow.icon`) e o `app.setAppUserModelId` agrupa a barra de tarefas. Sem esse ícone, atalho e janela caem no ícone do Electron. Mexeu no desenho: rodar os dois scripts da raiz e `instalar.bat` de novo.
 
 O atalho abre o Electron apontando para `inicio/`, que põe no lugar a versão
 baixada, carrega o jogo de `app/` e volta para `anterior/` se a nova quebrar
