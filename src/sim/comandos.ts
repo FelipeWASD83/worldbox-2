@@ -90,7 +90,7 @@ export function doarPara(de: Aldeia, para: Aldeia): string {
     const metade = de.estoque[m] / 2;
     if (metade < 5) continue;
     de.estoque[m] -= metade;
-    para.estoque[m] = Math.min(para.capacidadeEstoque, para.estoque[m] + metade);
+    para.estoque[m] = Math.min(m === 'ouro' ? para.tetoOuro : para.capacidadeEstoque, para.estoque[m] + metade);
     algo = true;
   }
   return algo ? 'A carga foi enviada.' : 'Não há o que enviar.';

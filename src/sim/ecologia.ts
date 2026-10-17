@@ -10,7 +10,8 @@ import { ancoraDaConstrucao, derrubar } from './urbanismo.js';
 import { fatorDeAgua } from './geracao.js';
 import { ED } from '../dados/edificios.js';
 import { BAL } from './balanco.js';
-import { indiceDoMaterial, oQueFalta } from './coleta.js';
+import { Estacao, daEstacao, estacaoDe, nevado } from './estacoes.js';
+import { indiceDoMaterial } from './coleta.js';
 
 const INDICE_COMIDA = indiceDoMaterial('comida');
 
@@ -44,6 +45,12 @@ export const sistemaEcologia: Sistema = {
     crescerVegetacao(mundo);
     comerVegetal(mundo);
     queimar(mundo);
+    if (
+      estacaoDe(mundo.tick) === Estacao.Verao &&
+      mundo.tick % BAL.intervaloFogoDeVerao === 0
+    ) {
+      fogoDeVerao(mundo);
+    }
     esfriarLava(mundo);
     desfazerRuinas(mundo);
   },
@@ -144,7 +151,9 @@ function desfazerRuinas(mundo: Mundo): void {
  * Árvores e arbustos voltam a encher com o tempo; minério, não.
  * Roda junto da vegetação, na mesma faixa de linhas, para pagar uma varredura só.
  */
-function recrescerRecursos(mundo: Mundo, y0: number, y1: number): void {
+function recrescerRecursos(
+  mundo: Mundo, y0: number, y1: number, estacao: number, comNeve: boolean,
+): void {
   const g = mundo.grid;
   for (let y = y0; y < y1; y++) {
     for (let x = 0; x < g.largura; x++) {
@@ -155,8 +164,9 @@ function recrescerRecursos(mundo: Mundo, y0: number, y1: number): void {
       if (passo <= 0) continue;
       const teto = REC_QUANTIDADE[r - 1];
       if (g.recursoQtd[i] >= teto) continue;
+      if (comNeve && nevado(mundo, i)) continue;
       const antes = g.recursoQtd[i];
-      g.recursoQtd[i] = Math.min(teto, antes + passo * FAIXAS);
+      g.recursoQtd[i] = Math.min(teto, antes + passo * FAIXAS * estacao);
       if ((g.recursoQtd[i] >> 3) !== (antes >> 3)) g.marcarSujo(x, y);
     }
   }
@@ -170,7 +180,9 @@ function recrescerRecursos(mundo: Mundo, y0: number, y1: number): void {
  * dá árvore pode brotar de novo, devagar, desde que ainda haja mata por perto
  * para semear — clareira no meio da floresta se fecha, deserto não vira bosque.
  */
-function rebrotarMata(mundo: Mundo, y0: number, y1: number): void {
+function rebrotarMata(
+  mundo: Mundo, y0: number, y1: number, estacao: number, comNeve: boolean,
+): void {
   // Mata e moita rebrotam pelo mesmo caminho, e cada uma para no seu teto. A
   // fruta entrou aqui porque só a mata voltava: em vinte mil ticks os arbustos
   // caíam de 8,7% do chão para 2,9%, comidos por bicho e por gente sem nunca
@@ -190,7 +202,8 @@ function rebrotarMata(mundo: Mundo, y0: number, y1: number): void {
       // fixo, savana, tundra e terra queimada nunca alcançavam — e eram
       // justamente os lugares onde a mata precisava voltar depois do fogo.
       if (g.vegetacao[i] < BIOMA_FERTIL[g.bioma[i]] * 255 * 0.55) continue;
-      if (!mundo.rng.chance(BAL.chanceRebrotar)) continue;
+      if (!mundo.rng.chance(BAL.chanceRebrotar * estacao)) continue;
+      if (comNeve && nevado(mundo, i)) continue;
       // A mata volta primeiro onde tem água, como na geração do mundo: a
       // margem do rio fecha a clareira em pouco tempo e o interflúvio seco
       // continua aberto por muito mais. Sem isto, uma floresta derrubada
@@ -264,7 +277,11 @@ function crescerVegetacao(mundo: Mundo): void {
   const linhasPorFaixa = Math.ceil(g.altura / FAIXAS);
   const y0 = faixa * linhasPorFaixa;
   const y1 = Math.min(g.altura, y0 + linhasPorFaixa);
-  const ganho = BAL.crescimentoVegetacao * FAIXAS;
+  const estacao = daEstacao(mundo, BAL.estacaoVegetacao);
+  const ganho = BAL.crescimentoVegetacao * FAIXAS * estacao;
+  // Abaixo da linha da neve nada cresce. A conta é uma comparação por tile, e
+  // só quando a linha está acima da neve de sempre.
+  const comNeve = mundo.linhaNeve > BAL.temperaturaDaNeve;
 
   for (let y = y0; y < y1; y++) {
     for (let x = 0; x < g.largura; x++) {
@@ -272,6 +289,7 @@ function crescerVegetacao(mundo: Mundo): void {
       if (g.fogo[i] > 0) continue;
       const fert = BIOMA_FERTIL[g.bioma[i]];
       if (fert <= 0) continue;
+      if (comNeve && nevado(mundo, i)) continue;
       const teto = fert * 255;
       if (g.vegetacao[i] >= teto) continue;
       const antes = g.vegetacao[i];
@@ -280,8 +298,8 @@ function crescerVegetacao(mundo: Mundo): void {
       if ((g.vegetacao[i] >> 4) !== (antes >> 4)) g.marcarSujo(x, y);
     }
   }
-  recrescerRecursos(mundo, y0, y1);
-  rebrotarMata(mundo, y0, y1);
+  recrescerRecursos(mundo, y0, y1, estacao, comNeve);
+  rebrotarMata(mundo, y0, y1, estacao, comNeve);
 }
 
 /**
@@ -311,7 +329,10 @@ function comerVegetal(mundo: Mundo): void {
     // no instante em que a criatura chega, antes deste sistema rodar.)
     if (estado === Estado.Trabalhando) {
       const casa = c.aldeia[i] >= 0 ? mundo.aldeias[c.aldeia[i]] : undefined;
-      if (!casa?.ativa || oQueFalta(casa) !== 'comida') continue;
+      // Desde as profissões, a pergunta é o que **esta pessoa** foi buscar, e
+      // não o que a vila pede: está anotado em `cargaMaterial` desde a saída
+      // (`irTrabalhar`, em `ia.ts`).
+      if (!casa?.ativa || c.cargaMaterial[i] !== INDICE_COMIDA) continue;
     }
 
     const t = g.idx(tx, ty);
@@ -356,8 +377,15 @@ function queimar(mundo: Mundo): void {
   const acender: number[] = [];
   const viz = mundo.bufVizinhos;
 
+  const espalha = BAL.espalhaFogo * daEstacao(mundo, BAL.estacaoFogo);
+
   for (const i of mundo.chamas) {
-    g.fogo[i] -= 1;
+    // Vila com poço tem fila de baldes: o fogo dentro do território dela se
+    // apaga várias vezes mais rápido e pula menos para o vizinho.
+    const comPoco = temPoco(mundo, i);
+    // `fogo` é um byte: subtrair 3 de um foco com 1 ou 2 dava a volta para
+    // 254, e o poço fazia o fogo durar mais em vez de menos. O teste 22 pegou.
+    g.fogo[i] = Math.max(0, g.fogo[i] - (comPoco ? BAL.fogoComPoco : 1));
     g.marcarSujoIdx(i);
 
     if (g.fogo[i] <= 0) {
@@ -383,7 +411,7 @@ function queimar(mundo: Mundo): void {
     for (let k = 0; k < n; k++) {
       const j = viz[k];
       if (g.fogo[j] > 0) continue;
-      const chance = combustivel(mundo, j) * BAL.espalhaFogo;
+      const chance = combustivel(mundo, j) * espalha * (comPoco ? BAL.espalhaComPoco : 1);
       if (chance > 0 && mundo.rng.chance(chance)) acender.push(j);
     }
   }
@@ -396,6 +424,14 @@ function queimar(mundo: Mundo): void {
     if (mundo.chamas.size > 6000) break; // teto de segurança
     atear(mundo, i);
   }
+}
+
+/** O tile pertence a uma vila que tem poço? */
+function temPoco(mundo: Mundo, i: number): boolean {
+  const dono = mundo.grid.aldeiaDona[i];
+  if (dono < 0) return false;
+  const a = mundo.aldeias[dono];
+  return a !== undefined && a.ativa && a.predios[ED.poco] > 0;
 }
 
 /**
@@ -427,4 +463,28 @@ export function atear(mundo: Mundo, i: number): void {
   mundo.chamas.add(i);
   g.marcarSujoIdx(i);
   mundo.eventos.emitir('terreno:incendio', { x: i % g.largura, y: (i / g.largura) | 0 });
+}
+
+/**
+ * O raio seco do verão.
+ *
+ * Sorteia alguns tiles do mapa e acende o primeiro que for quente, seco e
+ * tiver o que queimar. Se nenhum servir, não acende nada — o verão de um mundo
+ * frio e úmido passa sem incêndio, e é assim que deve ser.
+ */
+export function fogoDeVerao(mundo: Mundo): void {
+  if (!mundo.rng.chance(BAL.chanceFogoDeVerao)) return;
+  const g = mundo.grid;
+  for (let t = 0; t < 12; t++) {
+    const i = mundo.rng.int(g.total);
+    if (!g.ehTerra(i)) continue;
+    if (g.temp[i] < BAL.temperaturaDoFogoDeVerao) continue;
+    if (g.umidade[i] > BAL.umidadeDoFogoDeVerao) continue;
+    if (g.vegetacao[i] < 90) continue;
+    atear(mundo, i);
+    if (g.fogo[i] > 0) {
+      mundo.eventos.emitir('clima:raioSeco', { x: i % g.largura, y: (i / g.largura) | 0 });
+      return;
+    }
+  }
 }

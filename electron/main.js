@@ -309,10 +309,78 @@ async function autoteste(janela) {
   app.exit(ok ? 0 : 1);
 }
 
+/**
+ * Prints de conferência: abre o jogo, monta algumas cenas e salva a janela em
+ * PNG na pasta de `WB2_PRINTS`, depois fecha. É como uma sessão de trabalho vê
+ * o aplicativo de verdade sem ninguém na frente do computador.
+ *
+ *   npm run prints -- <pasta>
+ */
+async function tirarPrints(janela, pasta) {
+  await new Promise((r) => janela.webContents.once('did-finish-load', r));
+  const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+  await espera(2500);
+  await fs.mkdir(pasta, { recursive: true });
+  const salvar = async (nome) => {
+    await espera(1200);
+    const img = await janela.webContents.capturePage();
+    await fs.writeFile(path.join(pasta, `${nome}.png`), img.toPNG());
+    console.log(`print: ${nome}.png`);
+  };
+  const rodar = (codigo) => janela.webContents.executeJavaScript(`(async () => { ${codigo} })()`);
+
+  // um mundo crescido, no meio do inverno, com a câmera numa vila
+  await rodar(`
+    const jogo = window.__wb2jogo;
+    for (let i = 0; i < 8000; i++) jogo.mundo.avancar();
+    while (Math.floor((jogo.mundo.tick % 400) / 100) !== 3 || (jogo.mundo.tick % 100) < 45) jogo.mundo.avancar();
+    jogo.mundo.recalcularEstatisticas();
+    jogo.mundo.grid.marcarTudoSujo();
+    const vilas = jogo.mundo.aldeias.filter((v) => v.ativa).sort((a, b) => b.populacao - a.populacao);
+    const a = vilas[0];
+    const cam = jogo.renderizador.camera;
+    cam.x = a.x; cam.y = a.y; cam.escala = 3; cam.enquadrado = false;
+    return true;
+  `);
+  await salvar('1-inverno-de-longe');
+  await rodar(`
+    const jogo = window.__wb2jogo;
+    jogo.renderizador.camera.escala = 9;
+    return true;
+  `);
+  await salvar('2-inverno-de-perto');
+  // a ficha de uma pessoa com ofício
+  await rodar(`
+    const jogo = window.__wb2jogo;
+    const c = jogo.mundo.criaturas;
+    let quem = -1;
+    for (let i = 0; i < c.limite; i++) {
+      if (c.vivo[i] && c.aldeia[i] >= 0 && ((c.marcas[i] >> 4) & 7) !== 0 && c.abrigo[i] < 0) { quem = i; break; }
+    }
+    const cam = jogo.renderizador.camera;
+    cam.x = c.x[quem]; cam.y = c.y[quem]; cam.escala = 12;
+    const tela = document.getElementById('tela');
+    const r = tela.getBoundingClientRect();
+    const px = r.left + r.width / 2, py = r.top + r.height / 2;
+    tela.dispatchEvent(new PointerEvent('pointerdown', { clientX: px, clientY: py, button: 0, bubbles: true }));
+    tela.dispatchEvent(new PointerEvent('pointerup', { clientX: px, clientY: py, button: 0, bubbles: true }));
+    return quem;
+  `);
+  await salvar('3-pessoa-com-oficio');
+  // a aba mundo, com a estação e os preços
+  await rodar(`
+    document.querySelector('.aba-btn[data-alvo="mundo"]')?.click();
+    return true;
+  `);
+  await salvar('4-aba-mundo');
+  app.exit(0);
+}
+
 app.whenReady().then(() => {
   aplicarPolitica();
   const janela = criarJanela();
   if (process.env.WB2_TESTE) autoteste(janela);
+  else if (process.env.WB2_PRINTS) tirarPrints(janela, process.env.WB2_PRINTS);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) criarJanela();
   });

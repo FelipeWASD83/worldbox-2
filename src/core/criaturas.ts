@@ -30,6 +30,13 @@ export const MARCA_SOLDADO = 1 << 0;
 export const MARCA_DOENTE = 1 << 1;
 export const MARCA_DOMESTICADO = 1 << 2;
 export const MARCA_LIDER = 1 << 3;
+/**
+ * O ofício ocupa três bits (4 a 6) de `marcas`: oito valores, zero sendo "sem
+ * ofício". Ler e escrever sempre por `oficioDe` e `darOficio`
+ * (`src/sim/profissoes.ts`), nunca pelos bits na mão.
+ */
+export const OFICIO_DESLOCAMENTO = 4;
+export const OFICIO_MASCARA = 7 << OFICIO_DESLOCAMENTO;
 
 export const NOME_ESTADO: Record<number, string> = {
   [Estado.Ocioso]: 'parado',
@@ -78,6 +85,12 @@ export class Criaturas {
   readonly xp: Float32Array;
   /** Ticks que faltam para poder atacar de novo. */
   readonly cdAtaque: Float32Array;
+  /**
+   * Perícia no ofício atual, de 0 a 1. Sobe com o trabalho entregue e cai para
+   * um terço quando a pessoa troca de ofício — o lenhador que vira mineiro não
+   * sabe minerar no primeiro dia. Ver `src/sim/profissoes.ts`.
+   */
+  readonly pericia: Float32Array;
   /**
    * Índice do tile da casa em que a criatura entrou, ou -1 se está na rua.
    *
@@ -192,6 +205,7 @@ export class Criaturas {
     this.marcas = new Uint8Array(capacidade);
     this.xp = new Float32Array(capacidade);
     this.cdAtaque = new Float32Array(capacidade);
+    this.pericia = new Float32Array(capacidade);
     this.abrigo = new Int32Array(capacidade).fill(-1);
     this.tempoAbrigo = new Float32Array(capacidade);
     this.arma = new Uint8Array(capacidade);
@@ -247,6 +261,7 @@ export class Criaturas {
     this.marcas[i] = 0;
     this.xp[i] = 0;
     this.cdAtaque[i] = 0;
+    this.pericia[i] = 0;
     this.abrigo[i] = -1;
     this.tempoAbrigo[i] = 0;
     this.arma[i] = 0;

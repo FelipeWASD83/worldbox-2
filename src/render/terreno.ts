@@ -1,4 +1,5 @@
 import type { Mundo } from '../core/mundo.js';
+import { nevado } from '../sim/estacoes.js';
 import { LADO_CHUNK, NIVEL_MAR } from '../core/grid.js';
 import { BIOMA_AGUA, BIOMA_COR, BIOMA_VARIACAO, B } from '../dados/biomas.js';
 import { REC_COR } from '../dados/recursos.js';
@@ -136,6 +137,13 @@ export class CamadaTerreno {
         r = r * (1 - peso) + REC_COR[base3] * peso;
         vd = vd * (1 - peso) + REC_COR[base3 + 1] * peso;
         a = a * (1 - peso) + REC_COR[base3 + 2] * peso;
+      }
+
+      // neve do inverno: por cima do chão e da mata, por baixo de rua e prédio
+      if (nevado(this.mundo, i)) {
+        r = r * 0.22 + 234 * 0.78;
+        vd = vd * 0.22 + 239 * 0.78;
+        a = a * 0.22 + 245 * 0.78;
       }
 
       // a trama de ruas é o que dá a leitura de "aqui tem gente" no mapa

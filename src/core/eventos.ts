@@ -71,6 +71,8 @@ export type EventosDoJogo = {
   'especie:migrou': { especie: number; x: number; y: number; quantos: number };
 
   'terreno:incendio': { x: number; y: number };
+  /** O verão acendeu um tile sozinho. Ver `src/sim/estacoes.ts`. */
+  'clima:raioSeco': { x: number; y: number };
   'vulcao:erupcao': { x: number; y: number; bombas: number };
   'barco:lancado': { aldeia: number; tipo: number };
   'barco:atracou': { aldeia: number; carga: number };

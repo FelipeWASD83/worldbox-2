@@ -1,12 +1,14 @@
 import type { Mundo } from '../core/mundo.js';
-import { Estado, MARCA_DOENTE, MARCA_SOLDADO } from '../core/criaturas.js';
+import { Estado, MARCA_DOENTE, MARCA_SOLDADO, type Criaturas } from '../core/criaturas.js';
 import { Camera } from './camera.js';
 import { CamadaTerreno } from './terreno.js';
 import {
-  coresDePixel, gerarEquipamento, gerarSprites,
+  coresDePixel, gerarAtlas, gerarEquipamento, gerarSprites, indiceDoSprite,
+  type AtlasDeSprites,
   type BancoDeEquipamento, type BancoDeSprites,
 } from './sprites.js';
 import { CamadaTiles, ZOOM_DETALHE } from './tiles.js';
+import { LADO_SPRITE } from './moldes.js';
 import { ESP_PORTE, especies } from '../dados/especies.js';
 import { EQ_COR } from '../dados/equipamentos.js';
 
@@ -46,6 +48,8 @@ export class Renderizador {
   private terreno: CamadaTerreno;
   private tiles: CamadaTiles;
   private sprites: BancoDeSprites;
+  /** Os mesmos sprites numa imagem só, de onde o desenho recorta (ver `gerarAtlas`). */
+  private atlas: AtlasDeSprites;
   private equipamentoSprites: BancoDeEquipamento;
   private coresPixel: Uint32Array;
 
@@ -100,6 +104,7 @@ export class Renderizador {
     this.terreno = new CamadaTerreno(mundo);
     this.tiles = new CamadaTiles(mundo);
     this.sprites = gerarSprites();
+    this.atlas = gerarAtlas(this.sprites);
     this.equipamentoSprites = gerarEquipamento();
     this.coresPixel = coresDePixel();
 
@@ -299,7 +304,12 @@ export class Renderizador {
       const alt = ESP_PORTE[esp * 2 + 1] * cam.escala;
       const sx = cam.mundoParaTelaX(mx) - larg / 2;
       const sy = cam.mundoParaTelaY(my + 0.5) - alt;
-      ctx.drawImage(this.sprites[esp][dir], sx, sy, larg, alt);
+      const quadro = quadroDeAndar(c, i, this.mundo.tick);
+      ctx.drawImage(
+        this.atlas.canvas,
+        indiceDoSprite(dir, quadro) * LADO_SPRITE, esp * LADO_SPRITE, LADO_SPRITE, LADO_SPRITE,
+        sx, sy, larg, alt,
+      );
       this.desenhadas++;
       const lado = Math.max(larg, alt);
 
@@ -742,4 +752,23 @@ export class Renderizador {
       (area.y1 - area.y0) * ey,
     );
   }
+}
+
+/** Andando: parada, passo A, parada, passo B. Cada quadro dura `TICKS_POR_QUADRO`. */
+const SEQUENCIA_DE_ANDAR = [0, 1, 0, 2];
+const TICKS_POR_QUADRO = 3;
+
+/**
+ * Que quadro da animação a criatura mostra agora.
+ *
+ * Só quem está indo a algum lugar anda: parada ou dormindo é o quadro 0. O
+ * índice da criatura entra na conta para a manada não marchar sincronizada. Sai
+ * do tick do mundo, e não do relógio: com o jogo pausado o bicho congela no
+ * meio do passo, como o resto do mundo.
+ */
+function quadroDeAndar(c: Criaturas, i: number, tick: number): number {
+  const estado = c.estado[i];
+  if (estado === Estado.Ocioso || estado === Estado.Dormindo) return 0;
+  if (c.destinoX[i] < 0 && c.alvo[i] < 0) return 0;
+  return SEQUENCIA_DE_ANDAR[(((tick / TICKS_POR_QUADRO) | 0) + i) & 3];
 }

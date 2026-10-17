@@ -20,6 +20,8 @@ import { materialPorIndice } from './coleta.js';
 import { focoDe } from './comandos.js';
 import { empossarChefes } from './politica.js';
 import { BAL } from './balanco.js';
+import { Estacao, daEstacao, estacaoDe, nevado } from './estacoes.js';
+import { Oficio, materialDoOficio, oficioDe } from './profissoes.js';
 
 /** A cada quantos ticks a gestão das aldeias é reavaliada. */
 const INTERVALO_GESTAO = 10;
@@ -72,9 +74,17 @@ export const sistemaMoradores: Sistema = {
         } else if (m !== 'comida') {
           rendimento *= (1 + bonusDe(a, ED.mina, 'bonusMinerio')) * a.bonusPedra;
         }
+        // Quem trouxe o material do próprio ofício traz mais, e cada carga o
+        // deixa mais hábil. É a diferença entre o lenhador de vinte anos de
+        // mata e o oleiro que pegou o machado porque faltava lenha.
+        const oficio = oficioDe(c, i);
+        if (materialDoOficio(oficio, m)) {
+          rendimento *= 1 + c.pericia[i] * BAL.bonusDePericia;
+          c.pericia[i] = Math.min(1, c.pericia[i] + BAL.periciaPorCarga);
+        }
         // o que não cabe no celeiro se perde: é o que dá sentido a construir
         // mais armazém em vez de acumular para sempre
-        a.estoque[m] = Math.min(a.capacidadeEstoque, a.estoque[m] + rendimento);
+        a.estoque[m] = Math.min(mundo.tetoDe(a, m), a.estoque[m] + rendimento);
         // Trabalho entregue vira dinheiro no bolso de quem entregou. É daqui
         // que sai a fortuna que decide **quem governa a vila** — sem uma fonte
         // de riqueza individual, "o cidadão mais rico" seria sempre um empate
@@ -120,7 +130,11 @@ export const sistemaAldeias: Sistema = {
 function gerirAldeia(mundo: Mundo, a: Aldeia): void {
   const passo = INTERVALO_GESTAO;
 
-  if (a.esperaObra > 0) a.esperaObra -= passo;
+  // Os construtores apressam a obra seguinte: cada um encurta a espera, até a
+  // metade dela.
+  if (a.esperaObra > 0) {
+    a.esperaObra -= passo * Math.min(2, 1 + a.oficios[Oficio.Construtor] * BAL.pressaPorConstrutor);
+  }
 
   // ------------------------------------------------------------- 1. consumo
   a.estoque.comida -= a.populacao * BAL.consumoAldeia * passo;
@@ -143,7 +157,8 @@ function gerirAldeia(mundo: Mundo, a: Aldeia): void {
   // terra ao redor — a lavoura das fazendas.
   a.estoque.comida = Math.min(
     a.capacidadeEstoque,
-    a.estoque.comida + contarFazendas(mundo, a) * BAL.rendaPorFazenda * passo,
+    a.estoque.comida +
+      contarFazendas(mundo, a) * BAL.rendaPorFazenda * rendaDaLavoura(mundo, a) * passo,
   );
 
   // ------------------------------------------------------- 3. território
@@ -176,7 +191,7 @@ function gerirAldeia(mundo: Mundo, a: Aldeia): void {
     // comida — inflava os dois caminhos junto, e a casa perdia a dianteira de
     // novo. Aqui ela perde força sozinha, sem depender de eu reajustar nada.
     mundo.rng.chance(
-      (BAL.imigracaoParaAldeia * ESP_NATALIDADE[a.especie]) / (1 + a.casas * 1.4),
+      (BAL.imigracaoParaAldeia * ESP_NATALIDADE[a.especie]) / (1 + a.casas * BAL.imigracaoSomePorCasa),
     )
   ) {
     // Quem chega nem sempre é do povo da casa. É por esta porta que dois povos
@@ -635,6 +650,25 @@ function povoQueChega(mundo: Mundo, a: Aldeia): number {
   }
   if (candidatos.length === 0) return a.especie;
   return candidatos[mundo.rng.int(candidatos.length)];
+}
+
+/**
+ * Quanto a lavoura da vila rende agora, sobre o normal.
+ *
+ * A estação manda (colheita no outono, quase nada no inverno), a neve em cima
+ * da vila tira mais um pedaço, e o poço devolve: cada um põe uma fração a mais
+ * e, com pelo menos um, a seca do verão não pega — é água tirada do chão em vez
+ * de esperada do céu.
+ */
+export function rendaDaLavoura(mundo: Mundo, a: Aldeia): number {
+  const estacao = estacaoDe(mundo.tick);
+  const pocos = Math.min(a.predios[ED.poco], ED_MAXIMO[ED.poco]);
+  let fator = daEstacao(mundo, BAL.estacaoLavoura);
+  if (estacao === Estacao.Verao && pocos > 0) fator = Math.max(fator, 1);
+  if (estacao === Estacao.Inverno && nevado(mundo, mundo.grid.idx(a.x, a.y))) {
+    fator *= BAL.lavouraNaNeve;
+  }
+  return fator * (1 + pocos * BAL.irrigacaoPorPoco);
 }
 
 /** Quantas fazendas a aldeia tem trabalhando. */

@@ -19,10 +19,11 @@ import { BAL } from '../sim/balanco.js';
 import type { BombaDeLava } from '../sim/vulcoes.js';
 import type { Nuvem } from '../sim/clima.js';
 import type { Barco } from '../sim/barcos.js';
-import { estoqueVazio, type Estoque } from '../dados/materiais.js';
+import { MATERIAIS, estoqueVazio, type Estoque } from '../dados/materiais.js';
 import { TEC_INICIAIS } from '../dados/tecnologias.js';
 import { Campo } from '../dados/tracos.js';
 import { fator, tracosDoFilho, vidaMaxima } from '../sim/genetica.js';
+import { Rotas } from '../sim/caminho.js';
 
 export interface TamanhoMapa {
   readonly id: string;
@@ -76,6 +77,17 @@ export interface Aldeia {
   capacidade: number;
   /** Teto de cada material no estoque. Cresce com celeiros e com o nível. */
   capacidadeEstoque: number;
+  /**
+   * Teto do ouro. Igual ao do celeiro, salvo com banco, que tem cofre próprio.
+   * Derivado em `recalcularCapacidade`; não vai para o save.
+   */
+  tetoOuro: number;
+  /**
+   * Quantos adultos da vila têm cada ofício, por índice de `Oficio`
+   * (`src/sim/profissoes.ts`). Recontado pelo sistema de profissões; é array
+   * comum, e não tipado, para sobreviver ao JSON do save.
+   */
+  oficios: number[];
   /**
    * Tiles-âncora de todas as construções com moradia dentro do território.
    *
@@ -313,6 +325,8 @@ export class Mundo {
   readonly grid: Grid;
   readonly criaturas: Criaturas;
   readonly espacial: IndiceEspacial;
+  /** As rotas calculadas pela busca de caminho (`src/sim/caminho.ts`). Não vão para o save. */
+  readonly rotas: Rotas;
   readonly eventos = new Barramento();
   readonly pipeline = new Pipeline();
 
@@ -370,6 +384,20 @@ export class Mundo {
   nuvens: Nuvem[] = [];
   /** Os barcos no mar. Ver `src/sim/barcos.ts`. */
   barcos: Barco[] = [];
+  /**
+   * Temperatura abaixo da qual o chão está nevado agora (`src/sim/estacoes.ts`).
+   * -1 até o sistema de estações rodar pela primeira vez. Não vai para o save:
+   * sai do tick.
+   */
+  linhaNeve = -1;
+  /** Sobe a cada passo da linha da neve; o desenho do chão usa para saber que mudou. */
+  versaoNeve = 0;
+  /**
+   * Fator de preço de cada material sobre `VALOR_MATERIAL`, na ordem de
+   * `MATERIAIS`. É o mercado do mundo: sobe com a procura e desce com a sobra
+   * (`src/sim/economia.ts`).
+   */
+  precos: Float32Array = new Float32Array(MATERIAIS.length).fill(1);
   /** Para onde o vento sopra, em tiles por tick. Todas as nuvens o seguem. */
   ventoX = 0.014;
   ventoY = 0.006;
@@ -394,6 +422,7 @@ export class Mundo {
     this.rng = new Rng(semente);
     this.grid = new Grid(tamanho.largura, tamanho.altura);
     this.criaturas = new Criaturas(tamanho.capacidade);
+    this.rotas = new Rotas(tamanho.capacidade);
     this.espacial = new IndiceEspacial(tamanho.largura, tamanho.altura, tamanho.capacidade);
     this.tetoPorEspecie = new Int32Array(TOTAL_ESPECIES).fill(1 << 28);
     this.estatisticas = {
@@ -423,6 +452,8 @@ export class Mundo {
   ): number {
     const c = this.criaturas;
     const i = c.criar();
+    // slot reciclado não herda a rota de quem morreu nele
+    if (i >= 0) this.rotas.esquecer(i);
     if (i < 0) return -1;
     const def = especies.porIndice(especie);
     c.especie[i] = especie;
@@ -489,6 +520,8 @@ export class Mundo {
       casas: 0,
       capacidade: 6,
       capacidadeEstoque: 260,
+      tetoOuro: 260,
+      oficios: [0, 0, 0, 0, 0, 0, 0, 0],
       casasIdx: [],
       moinhosIdx: [],
       governante: -1,
@@ -879,6 +912,16 @@ export class Mundo {
     a.capacidade = Math.min(Math.round(cap), teto);
     a.casas = casas;
     a.capacidadeEstoque = 260 + celeiros * 420 + a.nivel * 160;
+    // O banco guarda o ouro fora do celeiro: sem ele, ouro e madeira disputam
+    // o mesmo armazém e a vila rica para de juntar dinheiro no teto do grão.
+    a.tetoOuro = a.predios[ED.banco] > 0
+      ? a.capacidadeEstoque * BAL.cofreDoBanco
+      : a.capacidadeEstoque;
+  }
+
+  /** Teto de um material no estoque da vila: o ouro tem o seu. */
+  tetoDe(a: Aldeia, m: string): number {
+    return m === 'ouro' ? a.tetoOuro : a.capacidadeEstoque;
   }
 
   /**

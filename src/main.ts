@@ -3,9 +3,11 @@ import { TAMANHOS } from './core/mundo.js';
 import { CATEGORIAS, poderes } from './sim/poderes.js';
 import { especies } from './dados/especies.js';
 import { Cronica } from './ui/cronica.js';
+import { Som } from './ui/som.js';
 import { Inspetor } from './ui/inspetor.js';
 import { PainelEstatisticas } from './ui/estatisticas.js';
 import { PainelComando } from './ui/comando.js';
+import { NOME_ESTACAO, estacaoDe } from './sim/estacoes.js';
 import {
   apagarSave, gravarSave, lerSave, listarSaves, ondeFicamOsSaves, rodandoNoApp,
 } from './ui/armazenamento.js';
@@ -82,6 +84,13 @@ const jogo = new Jogo(tela, ctx, {
 });
 pararSimulacao = () => jogo.parar();
 const cronica = new Cronica($<HTMLUListElement>('log'));
+// O som precisa de um gesto do jogador para existir (regra do navegador): nasce
+// no primeiro clique ou tecla. A câmera é pedida na hora porque ela troca junto
+// com o mundo.
+const som = new Som(() => jogo.renderizador.camera);
+const acordarSom = (): void => som.acordar();
+window.addEventListener('pointerdown', acordarSom);
+window.addEventListener('keydown', acordarSom);
 const inspetor = new Inspetor($('inspetor'));
 const painel = new PainelEstatisticas($('estatisticas'));
 const comando = new PainelComando($('comando'), () => jogo.mundo);
@@ -617,12 +626,28 @@ new ResizeObserver(ajustarTela).observe(palco);
 // --------------------------------------------------------------- ciclo da UI
 
 const elAno = $('ano');
+const elEstacao = $('estacao');
 const elPop = $('pop-topo');
 const elReinos = $('reinos-topo');
 const elGuerras = $('guerras-topo');
 const elDesempenho = $('desempenho');
 // O medidor de desempenho é coisa de quem está mexendo no jogo, não de quem
 // está jogando: nasce escondido e liga na aba de ajustes.
+// volume e mudo: o que estava guardado aparece no controle, e mexer grava
+{
+  const rng = $<HTMLInputElement>('rng-volume');
+  const lbl = $('lbl-volume');
+  const mudo = $<HTMLInputElement>('chk-mudo');
+  rng.value = String(Math.round(som.volume * 100));
+  lbl.textContent = rng.value;
+  mudo.checked = som.mudo;
+  const aplicar = (): void => {
+    lbl.textContent = rng.value;
+    som.ajustar(Number(rng.value) / 100, mudo.checked);
+  };
+  rng.addEventListener('input', aplicar);
+  mudo.addEventListener('change', aplicar);
+}
 $<HTMLInputElement>('chk-desempenho').addEventListener('change', (e) => {
   elDesempenho.hidden = !(e.target as HTMLInputElement).checked;
 });
@@ -636,10 +661,17 @@ jogo.aoQuadro = () => {
   painel.atualizar(jogo.mundo, agora);
   comando.acompanhar(agora);
 
+  som.atualizar(agora, jogo.velocidade);
+
   if (agora - ultimoTopo > 250) {
     ultimoTopo = agora;
     const s = jogo.mundo.estatisticas;
     elAno.textContent = String(jogo.ano);
+    const estacao = NOME_ESTACAO[estacaoDe(jogo.mundo.tick)];
+    if (elEstacao.textContent !== estacao) {
+      elEstacao.textContent = estacao;
+      elEstacao.dataset.estacao = String(estacaoDe(jogo.mundo.tick));
+    }
     elPop.textContent = String(s.populacao);
     elReinos.textContent = String(s.reinos);
     elGuerras.textContent = String(s.guerras);
@@ -668,6 +700,7 @@ function texto(html: string): HTMLElement {
 
 jogo.aoTrocarMundo = (mundo) => {
   cronica.ligar(mundo);
+  som.ligar(mundo);
   inspetor.limpar();
   comando.trocarMundo();
   $('bloco-comando').hidden = true;
@@ -678,6 +711,7 @@ jogo.aoTrocarMundo = (mundo) => {
 montarFerramentas();
 montarListaEspecies(false);
 cronica.ligar(jogo.mundo);
+som.ligar(jogo.mundo);
 jogo.anunciar();
 ajustarTela();
 jogo.renderizador.camera.enquadrarMundo();

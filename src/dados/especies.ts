@@ -148,11 +148,11 @@ especies.registrarTodos([
     id: 'elfo', nome: 'elfo', plural: 'elfos', categoria: 'civilizado', inteligente: true, cerebro: 'inteligente',
     dominio: 'terra', cores: [0xe8d5a8, 0x4f9e5c, 0x9a8c60], porte: [0.75, 1.15], tamanho: 3, velocidade: 0.065,
     vidaMax: 90, dano: 14, visao: 18, dieta: 'herbivoro', presas: ['coelho', 'veado'],
-    medoDe: [], agressividade: 0.25, longevidade: [16000, 26000], esperaFilho: 1700, ninhada: [1, 2],
+    medoDe: [], agressividade: 0.25, longevidade: [16000, 26000], esperaFilho: 1500, ninhada: [1, 2],
     biomas: ['floresta', 'selva'], frequencia: 1, lotacaoMax: 30,
     povo: {
       corReino: 0x4fbf72, prefereBiomas: ['floresta', 'selva'],
-      natalidade: 0.95, marcial: 1.05, beligerancia: 0.3, xenofobia: 0.55, odeia: ['orc', 'anao'],
+      natalidade: 1.1, marcial: 1.05, beligerancia: 0.3, xenofobia: 0.55, odeia: ['orc', 'anao'],
     },
   },
   {
@@ -170,7 +170,7 @@ especies.registrarTodos([
     id: 'orc', nome: 'orc', plural: 'orcs', categoria: 'civilizado', inteligente: true, cerebro: 'inteligente',
     dominio: 'terra', cores: [0x7fa05a, 0x54341f, 0x4d6337], porte: [0.9, 1.25], tamanho: 4, velocidade: 0.05,
     vidaMax: 145, dano: 20, visao: 12, dieta: 'carnivoro', presas: ['coelho', 'veado', 'ovelha', 'javali', 'humano', 'elfo', 'anao'],
-    medoDe: [], agressividade: 0.85, longevidade: [7000, 12000], esperaFilho: 1100, ninhada: [1, 3],
+    medoDe: [], agressividade: 0.85, longevidade: [7000, 12000], esperaFilho: 1300, ninhada: [1, 2],
     biomas: ['savana', 'pantano', 'deserto', 'selva'], frequencia: 1, lotacaoMax: 30,
     povo: {
       corReino: 0xc4553f, prefereBiomas: ['savana', 'pantano', 'selva'],

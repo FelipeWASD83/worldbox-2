@@ -1,6 +1,8 @@
 import { especies, type Especie } from '../dados/especies.js';
 import { equipamentos, EQ_COR } from '../dados/equipamentos.js';
-import { LADO_SPRITE, MOLDES, MOLDES_EQUIPAMENTO, type Molde } from './moldes.js';
+import {
+  LADO_SPRITE, MOLDES, MOLDES_EQUIPAMENTO, QUADROS_POR_DIRECAO, quadrosDe, type Molde,
+} from './moldes.js';
 
 /**
  * Sprites desenhados por código, sem nenhum arquivo de imagem.
@@ -28,20 +30,58 @@ export function formaDe(e: Especie): string {
   return 'quadrupede';
 }
 
-/** Sprites por espécie: [olhando à esquerda, olhando à direita]. */
+/**
+ * Sprites por espécie: `QUADROS_POR_DIRECAO` quadros olhando à esquerda, depois
+ * os mesmos olhando à direita. O índice sai de `indiceDoSprite`.
+ */
 export type BancoDeSprites = HTMLCanvasElement[][];
+
+export function indiceDoSprite(dir: number, quadro: number): number {
+  return dir * QUADROS_POR_DIRECAO + quadro;
+}
 
 /** Sprites de equipamento, por índice do registro e direção. */
 export type BancoDeEquipamento = Array<HTMLCanvasElement[] | null>;
 
+/**
+ * Todos os quadros de todas as espécies numa imagem só: uma linha por espécie,
+ * uma coluna por quadro (`indiceDoSprite`), cada célula de `LADO_SPRITE`.
+ *
+ * Com a animação, cada espécie passou de dois desenhos para seis, e desenhar
+ * cada bicho de um canvas próprio fazia a placa de vídeo trocar de imagem
+ * centenas de vezes por quadro: medido no autoteste do aplicativo, com
+ * novecentos bichos na tela, o desenho foi de 12 para 17 ms. Recortando de uma
+ * imagem só, a troca some.
+ */
+export interface AtlasDeSprites {
+  readonly canvas: HTMLCanvasElement;
+  readonly colunas: number;
+}
+
+export function gerarAtlas(banco: BancoDeSprites): AtlasDeSprites {
+  const colunas = QUADROS_POR_DIRECAO * 2;
+  const canvas = document.createElement('canvas');
+  canvas.width = colunas * LADO_SPRITE;
+  canvas.height = Math.max(1, banco.length) * LADO_SPRITE;
+  const ctx = canvas.getContext('2d')!;
+  banco.forEach((quadros, esp) => {
+    quadros.forEach((q, k) => ctx.drawImage(q, k * LADO_SPRITE, esp * LADO_SPRITE));
+  });
+  return { canvas, colunas };
+}
+
 export function gerarSprites(): BancoDeSprites {
   const banco: BancoDeSprites = [];
   for (const e of especies.todos()) {
-    const molde = MOLDES[formaDe(e)] ?? MOLDES.quadrupede;
+    const forma = MOLDES[formaDe(e)] ? formaDe(e) : 'quadrupede';
+    const quadros = quadrosDe(forma, MOLDES[forma]);
     // Os moldes são desenhados olhando para a direita, então quem vai na
     // posição 0 (andando para a esquerda) é o espelhado. Já esteve trocado, e
     // o mundo inteiro andava de costas.
-    banco.push([desenhar(molde, paletaDe(e), true), desenhar(molde, paletaDe(e), false)]);
+    banco.push([
+      ...quadros.map((q) => desenhar(q, paletaDe(e), true)),
+      ...quadros.map((q) => desenhar(q, paletaDe(e), false)),
+    ]);
   }
   return banco;
 }

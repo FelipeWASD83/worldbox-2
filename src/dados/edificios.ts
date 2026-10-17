@@ -123,12 +123,14 @@ export interface Edificio extends Definicao {
    */
   readonly naAgua?: boolean;
   /**
-   * Marco da cidade, sem efeito mecânico ainda.
+   * Marco da cidade: prédio de prestígio, que só uma vila crescida levanta.
    *
-   * Prefeitura, banco, biblioteca, taverna, quartel e poço existem no mapa, custam
-   * material e aparecem na ficha da aldeia, mas ainda não fazem nada — eles são
-   * o gancho da próxima atualização, a de política e civilizações, onde cada um
-   * ganha a sua função (governo, tesouro, conhecimento, ânimo e tropa).
+   * Já foi a marca de "existe no mapa e não faz nada". Cada um ganhou função
+   * desde então: prefeitura, biblioteca, templo e taverna rendem conhecimento
+   * (`src/sim/conhecimento.ts`), o banco guarda e rende ouro e barateia a compra
+   * (`src/sim/economia.ts`), o poço rega a lavoura e apaga incêndio
+   * (`rendaDaLavoura` e `src/sim/ecologia.ts`) e o quartel treina soldado
+   * (`src/sim/profissoes.ts`).
    */
   readonly marco?: boolean;
   /** Quantos moradores dormem dentro. Casa é o que permite haver filho. */

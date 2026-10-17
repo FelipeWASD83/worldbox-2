@@ -7,21 +7,28 @@ import { Campo } from '../dados/tracos.js';
 import { fator } from './genetica.js';
 import { EQ_PESO } from '../dados/equipamentos.js';
 import { BIOMA_AGUA } from '../dados/biomas.js';
+import { BAL } from './balanco.js';
+import { PONTOS_POR_ROTA, calcularRota } from './caminho.js';
 
 /**
  * Move cada criatura na direção do que ela decidiu.
  *
- * Não há busca de caminho: a criatura anda em linha reta e, quando esbarra em
- * terreno que não serve, desliza pelo eixo que ainda dá. Para um mundo de tiles
- * abertos isso basta, e é o que permite mover dezenas de milhares por tick.
- * Se um dia precisar de A*, o lugar de encaixar é aqui — o resto do jogo não
- * sabe como a criatura chega ao destino.
+ * A criatura anda em linha reta, que num mundo de tiles abertos é quase
+ * sempre o caminho, e é o que permite mover dezenas de milhares por tick.
+ * Quando a linha reta **bate** (água para quem anda, terra para quem nada), ela
+ * pede uma rota à busca de caminho (`caminho.ts`) e passa a seguir os pontos
+ * de passagem dela. Enquanto a rota não sai — o mundo calcula poucas por tick
+ * —, desliza pelo eixo que ainda dá, como sempre fez.
+ *
+ * Quem foge não pede rota: quem corre de um lobo não escolhe caminho. E quem
+ * voa não precisa.
  */
 export const sistemaMovimento: Sistema = {
   id: 'movimento',
   executar(mundo: Mundo): void {
     const c = mundo.criaturas;
     const g = mundo.grid;
+    const rotas = mundo.rotas;
     const limite = c.limite;
 
     for (let i = 0; i < limite; i++) {
@@ -61,6 +68,29 @@ export const sistemaMovimento: Sistema = {
         destY = c.destinoY[i] + 0.5;
       } else {
         continue;
+      }
+
+      // Tem rota para este destino? Então o alvo imediato é o próximo ponto
+      // de passagem, não o destino. Destino que mudou derruba a rota.
+      const dominioRota = ESP_DOMINIO[esp];
+      if (rotas.n[i] > 0 && estado !== Estado.Fugindo) {
+        const destTile = (destY | 0) * g.largura + (destX | 0);
+        if (rotas.para[i] !== destTile && !(alvo >= 0 && rotaAindaServe(rotas, i, g.largura, destX, destY))) {
+          rotas.esquecer(i);
+        } else {
+          const base = i * PONTOS_POR_ROTA + rotas.k[i];
+          const px = rotas.x[base] + 0.5;
+          const py = rotas.y[base] + 0.5;
+          const ddx = px - c.x[i];
+          const ddy = py - c.y[i];
+          if (ddx * ddx + ddy * ddy < 0.5) {
+            rotas.k[i]++;
+            if (rotas.k[i] >= rotas.n[i]) rotas.esquecer(i);
+          } else {
+            destX = px;
+            destY = py;
+          }
+        }
       }
 
       let dx = destX - c.x[i];
@@ -111,6 +141,12 @@ export const sistemaMovimento: Sistema = {
       if (podePisar(g, dominio, nx, ny)) {
         c.x[i] = nx;
         c.y[i] = ny;
+      } else if (
+        dominioRota !== 2 && QUER_ROTA[estado] === 1 && rotas.n[i] === 0 &&
+        pedirRota(mundo, i, dominioRota, alvo >= 0 ? destX : c.destinoX[i] + 0.5,
+          alvo >= 0 ? destY : c.destinoY[i] + 0.5)
+      ) {
+        // A linha reta bateu e a rota saiu: o próximo tick já segue por ela.
       } else if (podePisar(g, dominio, nx, c.y[i])) {
         c.x[i] = nx;
       } else if (podePisar(g, dominio, c.x[i], ny)) {
@@ -129,6 +165,64 @@ export const sistemaMovimento: Sistema = {
     }
   },
 };
+
+/**
+ * Quem tem motivo para pedir rota.
+ *
+ * Quem só passeia (`Vagando`) não pede: se o passeio bateu na água, ele
+ * desiste e sorteia outro, que é o que um bicho à toa faz, e era esse passeio
+ * que respondia pela maior parte das buscas — medido, dezessete por tick, com
+ * o movimento custando três vezes o resto da simulação junto. Quem foge também
+ * não pede: corre para longe, por onde der.
+ */
+const QUER_ROTA = (() => {
+  const t = new Uint8Array(16);
+  t[Estado.BuscandoComida] = 1;
+  t[Estado.Cacando] = 1;
+  t[Estado.Acasalando] = 1;
+  t[Estado.Atacando] = 1;
+  t[Estado.Voltando] = 1;
+  t[Estado.Trabalhando] = 1;
+  return t;
+})();
+
+/**
+ * Pede uma rota, respeitando o teto de buscas do tick e a espera de quem
+ * acabou de falhar. Devolve se a rota saiu.
+ */
+function pedirRota(mundo: Mundo, i: number, dominio: number, destX: number, destY: number): boolean {
+  const rotas = mundo.rotas;
+  if (mundo.tick < rotas.espera[i]) return false;
+  if (rotas.tickDasBuscas !== mundo.tick) {
+    rotas.tickDasBuscas = mundo.tick;
+    rotas.buscasNoTick = 0;
+  }
+  if (rotas.buscasNoTick >= BAL.buscasPorTick) return false;
+  rotas.buscasNoTick++;
+  const g = mundo.grid;
+  const tx = Math.max(0, Math.min(g.largura - 1, destX | 0));
+  const ty = Math.max(0, Math.min(g.altura - 1, destY | 0));
+  if (calcularRota(mundo, i, dominio, tx, ty)) return true;
+  // falhou na janela normal: tenta a grande daqui a pouco; falhou na grande,
+  // espera bastante antes de insistir
+  rotas.espera[i] = mundo.tick + (rotas.grande[i] === 1 ? 20 : BAL.esperaDepoisDeFalhar);
+  return false;
+}
+
+/**
+ * Rota atrás de uma criatura que anda: o alvo se mexe, e refazer a rota a cada
+ * passo dele seria pedir uma busca por tick. Ela continua valendo enquanto o
+ * alvo estiver a poucos tiles de onde a rota termina.
+ */
+function rotaAindaServe(
+  rotas: Mundo['rotas'], i: number, largura: number, destX: number, destY: number,
+): boolean {
+  const fim = rotas.para[i];
+  if (fim < 0) return false;
+  const fx = fim % largura;
+  const fy = (fim / largura) | 0;
+  return Math.abs(fx - destX) + Math.abs(fy - destY) < 6;
+}
 
 /** Quanto do passo sobra para quem está andando em rocha. */
 const PASSO_NA_SERRA = 0.45;

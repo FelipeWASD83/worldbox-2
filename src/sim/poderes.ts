@@ -519,7 +519,7 @@ poderes.registrarTodos([
       if (id < 0) return;
       const a = mundo.aldeias[id];
       for (const m of MATERIAIS) {
-        a.estoque[m] = Math.min(a.capacidadeEstoque, a.estoque[m] + a.capacidadeEstoque * 0.5);
+        a.estoque[m] = Math.min(mundo.tetoDe(a, m), a.estoque[m] + a.capacidadeEstoque * 0.5);
       }
       a.moral = Math.min(100, a.moral + 15);
     },

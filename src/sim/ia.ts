@@ -12,9 +12,12 @@ import { Campo, MASCARA_DESTEMIDO } from '../dados/tracos.js';
 import { fator, vidaMaxima } from './genetica.js';
 import { BIOMA_AGUA } from '../dados/biomas.js';
 import { REC_COMIDA } from '../dados/recursos.js';
-import { oQueFalta, procurarRecurso } from './coleta.js';
+import { indiceDoMaterial, oQueFalta, procurarRecurso } from './coleta.js';
 import { acharCasaComVaga, entrar, naPorta } from './moradia.js';
+import type { Material } from '../dados/materiais.js';
 import { BAL } from './balanco.js';
+import { daEstacao } from './estacoes.js';
+import { oQueBuscar, oficioDe } from './profissoes.js';
 
 /**
  * Decisão das criaturas.
@@ -261,6 +264,38 @@ function objetivoAindaVale(mundo: Mundo, i: number): boolean {
   }
 }
 
+/**
+ * Manda o trabalhador atrás de um material. Devolve se achou onde.
+ *
+ * Deixa anotado em `cargaMaterial` **o que foi pedido**, enquanto a carga está
+ * vazia: é o que a coleta de fruta pergunta antes de encher a cesta
+ * (`comerVegetal`, em `ecologia.ts`). Comparar com o tile de destino não serve,
+ * e comparar com o que a vila pede também não, desde que cada ofício pede uma
+ * coisa — o lenhador mandado ajudar na roça tem de poder colher.
+ */
+function irTrabalhar(
+  mundo: Mundo, i: number, material: Material, alcance: number, visao: number, nivel: number,
+): boolean {
+  const c = mundo.criaturas;
+  if (c.carga[i] === 0) c.cargaMaterial[i] = indiceDoMaterial(material);
+  if (material === 'comida') {
+    // lavoura e coleta de fruta primeiro; caçar é o plano B
+    if (acharComidaVegetal(mundo, i, alcance)) {
+      c.estado[i] = Estado.Trabalhando;
+      return true;
+    }
+    if (procurarRecurso(mundo, i, 'comida', alcance, nivel)) return true;
+    const presa = mundo.espacial.maisProximo(c, i, visao, aceitaPresa);
+    if (presa >= 0) {
+      c.estado[i] = Estado.Cacando;
+      c.alvo[i] = presa;
+      return true;
+    }
+    return false;
+  }
+  return procurarRecurso(mundo, i, material, alcance, nivel);
+}
+
 // ---------------------------------------------------------------------- cérebros
 
 /** Bicho: foge, come, procura par, vagueia. Nesta ordem. */
@@ -306,7 +341,10 @@ const cerebroAnimal: Cerebro = (mundo, i) => {
     if (ESP_HERBIVORO[esp] === 1 && acharComidaVegetal(mundo, i, Math.max(6, visao))) return;
   }
 
-  if (podeReproduzir(c, i)) {
+  // A estação decide quando é tempo de filhote: na primavera todo bicho
+  // procura par, no inverno quase nenhum. Sorteio e não proibição, para o
+  // mundo não ficar sem nascimento nenhum por um quarto do ano.
+  if (podeReproduzir(c, i) && mundo.rng.chance(daEstacao(mundo, BAL.estacaoCio))) {
     // dois freios: o do mundo inteiro (quantos desta espécie cabem no mapa) e o
     // da vizinhança (quantos cabem por perto). O primeiro é o que define a
     // quantidade de bichos; o segundo é o que os espalha em vez de amontoar.
@@ -479,27 +517,20 @@ const cerebroInteligente: Cerebro = (mundo, i) => {
       return;
     }
     if (c.estado[i] !== Estado.Trabalhando) {
-      // vai atrás do que está faltando em casa, e não do que estiver por perto
-      const material = oQueFalta(aldeia);
+      // Vai atrás do que o ofício dele pede (ou do que falta em casa, se o
+      // material do ofício está em dia), e não do que estiver por perto.
+      // Ofício de casa só sai se a vila estiver com fome. Ver `profissoes.ts`.
       const alcance = aldeia.raio + BAL.alcanceDeTrabalho;
-
-      if (material === null) {
-        // celeiros cheios: ninguém trabalha à toa
-      } else if (material === 'comida') {
-        // lavoura e coleta de fruta primeiro; caçar é o plano B
-        if (acharComidaVegetal(mundo, i, alcance)) {
-          c.estado[i] = Estado.Trabalhando;
-          return;
-        }
-        if (procurarRecurso(mundo, i, 'comida', alcance, aldeia.nivel)) return;
-        const presa = mundo.espacial.maisProximo(c, i, visao, aceitaPresa);
-        if (presa >= 0) {
-          c.estado[i] = Estado.Cacando;
-          c.alvo[i] = presa;
-          return;
-        }
-      } else if (procurarRecurso(mundo, i, material, alcance, aldeia.nivel)) {
-        return;
+      const pedido = oQueBuscar(aldeia, oficioDe(c, i));
+      // celeiros cheios: ninguém trabalha à toa
+      if (pedido !== null && irTrabalhar(mundo, i, pedido, alcance, visao, aldeia.nivel)) return;
+      // O material do ofício não foi achado por perto (o mineiro numa vila sem
+      // veio, o lenhador com a mata derrubada): em vez de ficar rondando, ajuda
+      // no que a vila mais precisa.
+      if (pedido !== null) {
+        const daVila = oQueFalta(aldeia);
+        if (daVila !== null && daVila !== pedido &&
+            irTrabalhar(mundo, i, daVila, alcance, visao, aldeia.nivel)) return;
       }
     }
     if (c.estado[i] === Estado.Trabalhando && !chegouAoDestino(c, i)) return;

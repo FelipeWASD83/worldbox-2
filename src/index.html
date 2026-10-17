@@ -97,6 +97,12 @@
               <label class="alternador"><input type="checkbox" id="chk-desempenho"> desempenho</label>
             </div>
             <div class="config-grupo">
+              <h3>Som</h3>
+              <input type="range" id="rng-volume" min="0" max="100" value="60">
+              <div class="valor"><span id="lbl-volume">60</span>%</div>
+              <label class="alternador"><input type="checkbox" id="chk-mudo"> sem som</label>
+            </div>
+            <div class="config-grupo">
               <h3>Pincel</h3>
               <input type="range" id="rng-raio" min="1" max="40" value="4">
               <div class="valor"><span id="lbl-raio">4</span> tiles</div>
@@ -129,6 +135,7 @@
 
       <div class="relogio">
         <span class="rotulo">ANO</span><b id="ano">0</b>
+        <b id="estacao" class="estacao">primavera</b>
         <span class="rotulo">POPULAÇÃO</span><b id="pop-topo">0</b>
         <span class="rotulo">REINOS</span><b id="reinos-topo">0</b>
         <span class="rotulo">GUERRAS</span><b id="guerras-topo">0</b>

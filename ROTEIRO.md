@@ -39,14 +39,35 @@ avançar sobre a outra, um reino perder chão, a pressão que o limite de tamanh
 da vila cria. Isso encosta no update de política.
 
 ### 3. O que ainda não faz nada
-Sobraram **banco** e **poço**: os dois estão de pé no mapa, custam material e
-não têm efeito mecânico. Prefeitura, biblioteca, templo e taverna deixaram de
-estar nessa lista — viraram a fonte de conhecimento do reino na fase 4. Falta
-também o sistema de **profissões**, que estava no mesmo balaio e não entrou.
+Nada. Desde a v2.0 todas as vinte construções têm efeito: o poço rega a
+lavoura e apaga incêndio, o banco guarda e rende ouro, o quartel treina
+soldado. As profissões também existem (ver v2.0 abaixo).
 
 ---
 
 ## Feito
+
+### v2.0: o ano, o ofício e o som
+Fechou os sete pontos que sobravam no "Aberto / próximo" do `CLAUDE.md`.
+
+- **Estações** (`src/sim/estacoes.ts`): quatro por ano, mudando quando a mata
+  cresce, quando a lavoura rende, quando os bichos procriam, quanto chove e
+  quanto o fogo pula. Neve calculada pela linha de temperatura, que sobe no
+  inverno e redesenha só a faixa de chão que mudou. Raio seco no verão.
+- **Profissões** (`src/sim/profissoes.ts`): sete ofícios, cota por vila pelo
+  que falta e pelo foco, perícia que cresce com o trabalho e segura o bom
+  profissional no lugar.
+- **Preço por oferta e procura** em `Mundo.precos`, com a tabela na aba
+  mundo e no save.
+- **Poço, banco e quartel** com efeito.
+- **Busca de caminho** (`src/sim/caminho.ts`): A\* em janela, só para quem tem
+  motivo e só quando a linha reta bate, com teto de buscas por tick.
+- **Som** sintetizado (`src/ui/som.ts`) e **animação** de passo gerada dos
+  moldes.
+- **Equilíbrio** medido com a ferramenta nova `npm run equilibrio` (doze
+  sementes em processos separados) e ajustado nos dados dos povos.
+- **Testes 21 a 26** (`tools/testes2.ts`), cada um comparando o mundo com e
+  sem a mecânica.
 
 ### v0.13 — o painel de um deus
 As ferramentas do jogador saíram de 37 para **188**, em oito abas.

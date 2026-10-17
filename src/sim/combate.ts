@@ -7,6 +7,8 @@ import { fator } from './genetica.js';
 import { EQ_ALCANCE, EQ_DANO, EQ_DEFESA } from '../dados/equipamentos.js';
 import { BAL } from './balanco.js';
 import { indiceDoMaterial } from './coleta.js';
+import { MARCA_SOLDADO } from '../core/criaturas.js';
+import { ED } from '../dados/edificios.js';
 
 const INDICE_COMIDA = indiceDoMaterial('comida');
 
@@ -43,6 +45,11 @@ export const sistemaCombate: Sistema = {
       if (arma !== 0) dano += EQ_DANO[arma - 1];
       // veterania: cada luta deixa a criatura um pouco melhor (teto de +50%)
       dano *= 1 + Math.min(0.5, c.xp[i] * 0.02);
+      // soldado que saiu de vila com quartel bate mais: é tropa treinada
+      if ((c.marcas[i] & MARCA_SOLDADO) !== 0 && c.aldeia[i] >= 0) {
+        const casa = mundo.aldeias[c.aldeia[i]];
+        if (casa?.ativa && casa.predios[ED.quartel] > 0) dano *= BAL.danoComQuartel;
+      }
       if (c.reino[i] >= 0 && c.reino[alvo] >= 0 && mundo.emGuerra(c.reino[i], c.reino[alvo])) {
         dano *= BAL.bonusGuerra;
       }

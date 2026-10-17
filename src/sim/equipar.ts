@@ -8,6 +8,8 @@ import {
 import type { Estoque, Material } from '../dados/materiais.js';
 import { MATERIAIS } from '../dados/materiais.js';
 import { nivelDeForja } from './civilizacao.js';
+import { Oficio } from './profissoes.js';
+import { BAL } from './balanco.js';
 
 /**
  * Fabricação e distribuição de equipamento.
@@ -79,13 +81,13 @@ function melhorar(
     // celeiro. É o que separa a horda de porretes do exército de aço.
     if (!mundo.reinoSabe(a.reino, EQ_TECNOLOGIA[equipamentos.indice(def.id)])) continue;
     if (forcaDe(def) <= forcaAtual) continue;
-    if (!temComQuePagar(a.estoque, def.custo)) continue;
+    if (!temComQuePagar(a.estoque, def.custo, desconto(a))) continue;
     melhor = def;
     indiceMelhor = equipamentos.indice(def.id);
   }
 
   if (!melhor) return;
-  pagar(a.estoque, melhor.custo);
+  pagar(a.estoque, melhor.custo, desconto(a));
   campo[criatura] = indiceMelhor + 1;
 }
 
@@ -93,17 +95,28 @@ function forcaDe(e: Equipamento): number {
   return e.dano + e.defesa;
 }
 
-function temComQuePagar(estoque: Estoque, custo: Partial<Estoque>): boolean {
+/**
+ * Quanto os ferreiros da vila tiram do custo de cada peça, de 0 a 0,4.
+ *
+ * É a contagem pura de ferreiros, e não a perícia somada: o equipamento é
+ * entregue de quarenta em quarenta ticks a cada morador, e varrer o pool para
+ * somar perícia a cada peça seria a conta mais cara deste sistema.
+ */
+function desconto(a: Aldeia): number {
+  return Math.min(0.4, a.oficios[Oficio.Ferreiro] * BAL.descontoPorFerreiro);
+}
+
+function temComQuePagar(estoque: Estoque, custo: Partial<Estoque>, desc: number): boolean {
   for (const m of MATERIAIS) {
     const quanto = custo[m];
-    if (quanto !== undefined && estoque[m] < quanto) return false;
+    if (quanto !== undefined && estoque[m] < quanto * (1 - desc)) return false;
   }
   return true;
 }
 
-function pagar(estoque: Estoque, custo: Partial<Estoque>): void {
+function pagar(estoque: Estoque, custo: Partial<Estoque>, desc: number): void {
   for (const m of MATERIAIS) {
     const quanto = custo[m as Material];
-    if (quanto !== undefined) estoque[m] -= quanto;
+    if (quanto !== undefined) estoque[m] -= quanto * (1 - desc);
   }
 }

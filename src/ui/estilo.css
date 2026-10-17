@@ -645,3 +645,10 @@ dialog menu {
   font-size: 10px;
   color: var(--texto-3);
 }
+
+/* A estação ao lado do ano, numa cor por estação: lê-se de relance sem rótulo. */
+.relogio b.estacao { font-weight: 400; margin-left: -4px; }
+.relogio b.estacao[data-estacao="0"] { color: #9ccf7a; }
+.relogio b.estacao[data-estacao="1"] { color: #e8c45a; }
+.relogio b.estacao[data-estacao="2"] { color: #d98a4a; }
+.relogio b.estacao[data-estacao="3"] { color: #a9c8e6; }

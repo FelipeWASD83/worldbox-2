@@ -31,6 +31,8 @@ Como jogar e o que cada ferramenta faz está no `README.md`.
 | `npm run sim` | Roda N ticks sem janela e relata população, aldeias, guerras, custo por sistema e problemas. |
 | `npm run diag` | Relata de que cada espécie morreu e **quem matou quem**. |
 | `npm run testar-app` | Abre o Electron, pergunta ao jogo como ele está e fecha. |
+| `npm run prints -- <pasta>` | Abre o aplicativo de verdade, monta quatro cenas (inverno de longe e de perto, a ficha de uma pessoa, a aba mundo) e salva cada uma em PNG na pasta. É como uma sessão sem ninguém no PC vê a janela. |
+| `npm run equilibrio` | Roda várias sementes (uma por processo) e mede a fatia de cada povo, quantas vezes cada um some, a dominância do maior e nascidos em casa contra chegados de fora. `--bal chave=valor` testa um número do balanço sem mexer no arquivo. |
 | `npm test` | Testes de regressão do motor: geração em todos os tamanhos, índice espacial, save, medidor. |
 | `npm run typecheck` | `tsc --noEmit` sobre tudo. |
 
@@ -182,9 +184,9 @@ precisou de terra firme nos doze tiles do lote, só duas de vinte vilas costeira
 achavam onde erguê-lo, e o mundo terminava com um porto só. Um cais é meio terra,
 meio água — e é isso que o faz caber numa costa recortada.
 
-Não há busca de caminho no mar, como não há em terra. O que evita casco preso em
-baía é escolher destino só quando **a linha reta até lá é toda navegável**
-(`caminhoLivre`).
+Barco não usa a busca de caminho das criaturas (`caminho.ts`): o que evita
+casco preso em baía é escolher destino só quando **a linha reta até lá é toda
+navegável** (`caminhoLivre`).
 
 ### Política: quem manda, e o índice que não se pode guardar
 
@@ -528,6 +530,109 @@ fora do mapa, que não sobrou tile preso a construção inexistente e que o
 resultado ainda salva. Com quase duzentos caminhos, é a única forma de saber que
 nenhum deles quebra num caso que o desenvolvimento não visitou.
 
+### Estações: o ano tem quatro, e o que muda é quando, não quanto
+
+`src/sim/estacoes.ts`. O ano tem `TICKS_ANO` (400) ticks e a estação é só a
+posição do tick dentro dele: nada é guardado, e por isso nada vai para o save.
+Os multiplicadores (`BAL.estacao*`, na ordem primavera, verão, outono, inverno)
+têm **média perto de 1 de propósito**: o mato explode na primavera, o verão
+seca a lavoura e acende a savana (`fogoDeVerao`, em `ecologia.ts`), o outono é
+a colheita e o inverno para tudo. Com médias abaixo de 1, o inverno seria um
+corte disfarçado na comida do mundo inteiro.
+
+A neve do inverno é **calculada, não pintada**: um tile está nevado quando a
+temperatura dele fica abaixo de `Mundo.linhaNeve`, que sobe e desce numa curva
+ao longo do ano. Nenhum bioma é trocado. Duas coisas seguram o custo disso:
+
+- A linha anda em **degraus** (`BAL.degrauDaNeve`), e cada passo marca para
+  redesenhar só os pedaços de chão que têm tile na faixa que mudou. Marcar o
+  mapa inteiro custaria uma varredura do terreno a cada passo.
+- O degrau é sobre a **subida**, e não sobre a linha inteira. Arredondando a
+  linha, o verão ficava dois pontos acima da neve de sempre e pintava de
+  branco uma faixa de tundra no meio do verão. O teste 21 pega isso.
+
+### Profissões: cada adulto tem um ofício
+
+`src/sim/profissoes.ts`. O ofício mora em três bits de `Criaturas.marcas`
+(4 a 6; ler e escrever só por `oficioDe` e `darOficio`) e a perícia em
+`Criaturas.pericia`. Os **de fora** (lavrador, lenhador, mineiro) buscam o
+material do ofício e entregam mais com perícia; os **de casa** (construtor,
+ferreiro, mercador, estudioso) trabalham na vila e o efeito é sobre ela
+(obra mais rápida, equipamento mais barato, conhecimento para o reino). O
+soldado continua sendo a marca de guerra por cima do ofício, e o quartel passou
+a treinar quem tem essa marca.
+
+Três lições medidas:
+
+- **A pergunta "o que a criatura foi buscar" é dela, não da vila.** Com cada
+  ofício pedindo uma coisa, a coleta de fruta (`comerVegetal`) não podia mais
+  perguntar `oQueFalta(vila)`. Quem sai para trabalhar deixa anotado em
+  `cargaMaterial` o que foi buscar (`irTrabalhar`, em `ia.ts`), e é isso que a
+  coleta confere. É a mesma armadilha do "trabalhador voltando com a carga
+  errada", um andar acima.
+- **O ofício de fora busca até quase encher o celeiro**, e não só até o mínimo
+  da vila. Com o mínimo, o lenhador largava a mata assim que havia madeira para
+  a semana, ia ajudar na roça e a perícia mediana dos lenhadores era zero.
+- **A troca de ofício tem folga e apego.** A cota anda com o celeiro; sem a
+  folga de 25% e sem a perícia segurando quem é bom (`BAL.apegoAoOficio`), a
+  vila trocava gente de lugar a cada oscilação e a perícia média do mundo não
+  passava de 7%.
+
+A contagem é feita como a da lealdade: duas varreduras do pool com tabela por
+id de aldeia, nunca um laço por vila (ver "Clã, lealdade e rebelião").
+
+### Busca de caminho: só quando a linha reta bate
+
+`src/sim/caminho.ts`. O movimento continua em linha reta. Quando o passo bate
+(água para quem anda, terra para quem nada), a criatura pede uma rota: A\* numa
+janela de `BAL.janelaDaBusca` tiles em volta dela, esticada por linha de visão
+em até `PONTOS_POR_ROTA` pontos de passagem. As rotas moram em `Mundo.rotas`
+(arrays paralelos ao pool) e não vão para o save.
+
+O que custou caro e não pode voltar:
+
+- **Quem só passeia não pede rota** (`QUER_ROTA`, em `movimento.ts`). Com todo
+  mundo pedindo, eram dezessete buscas por tick e o movimento custava três
+  vezes o resto da simulação junto (2 ms por tick no mapa médio). Bicho à toa
+  que bateu na água sorteia outro passeio; quem tem motivo (comer, caçar,
+  trabalhar, voltar, procurar par, atacar) pede rota. Quem foge nunca pede.
+- **A busca grande é numa vez separada.** Quando a janela normal não acha
+  passagem, a **próxima** tentativa da mesma criatura usa a janela máxima
+  (`Rotas.grande`). As duas na mesma chamada estouravam o orçamento.
+- **Esticar a rota avança até o primeiro nó que some de vista**, e não procura
+  o mais distante visível: o segundo jeito custa o quadrado do comprimento.
+- O teto `BAL.buscasPorTick` é o que segura o custo num mapa enorme; quem pede
+  além dele desliza pelo eixo livre, como antes, e pede de novo depois.
+
+### Preço por oferta e procura, poço e banco
+
+`Mundo.precos` guarda um fator por material sobre `VALOR_MATERIAL`, o mesmo
+para o mundo inteiro, e vai para o save. A cada rodada de comércio ele anda uma
+fração (`BAL.mareDoPreco`) para a raiz de (procura + 1) / (oferta + 1);
+negócio fechado encarece, exportação barateia. O preço anda mesmo num mundo sem
+mercado: a procura é de quem precisa. A tabela de preços aparece na aba mundo.
+
+O poço rega a lavoura e, com um, a seca do verão não pega na vila
+(`rendaDaLavoura`, em `civilizacao.ts`); dentro do território de vila com poço,
+o fogo se apaga várias vezes mais rápido. O banco dá cofre próprio ao ouro
+(`Aldeia.tetoOuro`; o ouro deixa de disputar o celeiro com a madeira, e todo
+lugar que soma ouro tem de usar `mundo.tetoDe`), rende juros à vila e ao
+tesouro do reino e barateia a compra de quem o tem.
+
+### Som e animação
+
+O som (`src/ui/som.ts`) é todo sintetizado pelo Web Audio, sem arquivo:
+ambiente de vento, chuva, mar e fogo tirado do que **está na tela**, e um som
+curto por acontecimento do barramento. Só toca depois do primeiro clique ou
+tecla (regra do navegador). Volume e mudo ficam no `localStorage`, que é
+preferência da janela e não do mundo.
+
+A animação (`quadrosDe`, em `render/moldes.ts`) gera dois quadros de passo de
+cada molde parado, sem desenho à mão: pernas, asa, rabo ou onda, conforme a
+forma. O quadro sai do tick do mundo, então o jogo pausado congela o passo. O
+banco de sprites passou a ter `QUADROS_POR_DIRECAO` quadros por direção, e o
+índice sai de `indiceDoSprite`.
+
 ### Custo: onde ele está e como é segurado
 
 A IA é, de longe, o sistema mais caro — foi medido em 90% do tempo de tick. Três
@@ -582,15 +687,16 @@ O que já está no lugar esperando ser usado:
   (`mundo.reinoSabe`), como fazem as obras e o equipamento, e não a era.
 - `Reino.relacoes` é um mapa de -100 a +100 por par de reinos; alianças e
   comércio cabem aí sem mudar estrutura.
-- `Criaturas.marcas` tem bits livres para profissão, e `xp` já acumula.
+- `Criaturas.marcas` usa os bits 4 a 6 para o ofício (ver "Profissões" na
+  seção 3); sobra o bit 7.
 - Edifício novo é um objeto em `src/dados/edificios.ts` mais uma linha na escolha
   de `construirAlgo()`.
 
 ### Economia e comércio (`src/sim/economia.ts`, `coleta.ts`)
-`oQueFalta()` é o cérebro econômico da aldeia: define o que os trabalhadores vão
-buscar, e é o primeiro lugar a mexer quando o assunto for profissão, imposto ou
-demanda. O comércio já usa `VALOR_MATERIAL` como preço base — preço que varia
-com oferta e procura entra ali.
+`oQueFalta()` é o cérebro econômico da aldeia, e `oQueBuscar()`
+(`profissoes.ts`) é a mesma pergunta feita para uma pessoa com ofício. O preço
+de cada material é `precoDe()` (`economia.ts`): o valor base de
+`VALOR_MATERIAL` vezes o fator de mercado em `Mundo.precos`.
 
 ### Equipamento (`src/dados/equipamentos.ts`, `sim/equipar.ts`)
 Três encaixes por criatura (arma, escudo, armadura), um byte cada. A aldeia
@@ -787,8 +893,9 @@ da genética e das ferramentas (a contagem de ferramentas, tecnologias e traços
 névoa diplomática, casus belli, tecnologia, genética, clãs e rebelião,
 território, interface, cargos e portos) entraram em 02/09/2026, no commit
 `b014902`, e são daquela rodada; a contagem de construções foi conferida em
-09/09/2026 (nota abaixo). Nenhum código mudou depois de 02/09/2026, e nada foi
-medido de novo desde então.
+09/09/2026 (nota abaixo). A v2.0 (16/10/2026) mediu de novo só o equilíbrio
+entre os povos e o custo por tick, no fim desta seção; o resto é da rodada
+anterior.
 
 - 144 fps no aplicativo, inclusive com o mapa aproximado e o chão desenhado
   tile a tile.
@@ -862,20 +969,35 @@ medido de novo desde então.
   colônia do outro lado dele (medido em arquipélago: 8 portos, 23 barcos,
   6 colônias por mar em 40 mil ticks).
 
+**Medido na v2.0 (16/10/2026)**, com `npm run equilibrio` (doze sementes,
+trinta mil ticks, mapa médio), antes e depois da versão:
+
+- Fatia média de cada povo na população civilizada: antes humano 22%, elfo
+  11%, anão 25%, orc 41%; depois humano 25%, elfo 15%, anão 30%, orc 30%. Um
+  povo sumido no fim em quatro dos quarenta e oito casos (antes, nenhum; a
+  refundação os traz de volta depois). A **dominância** (fatia do maior povo,
+  média da partida) ficou entre 44% e 52% em todas as rodadas, antes e
+  depois: com doze sementes, isso é ruído, e o mundo segue tendo um povo
+  grande por partida. O que mudou é que ele deixou de ser quase sempre o orc.
+- O que moveu isso: ninhada e espera de filho dos orcs (`[1, 3]` e 1100 para
+  `[1, 2]` e 1300), natalidade e espera dos elfos (0,95 e 1700 para 1,1 e
+  1500), em `src/dados/especies.ts`; `BAL.vontadeDeFamilia` de 0,45 para 0,6;
+  e `BAL.imigracaoSomePorCasa` (era 1,4 escrito no código) para 3. A busca de
+  caminho também pesa: sem ela, os elfos somem em quatro de doze sementes.
+- Nascidos em casa contra chegados de fora: antes 1031 contra 677, depois 547
+  contra 443 de média. A casa continua sendo o caminho principal; os dois
+  números caíram porque a ninhada dos orcs ficou menor e as vilas, menores.
+- Custo: 0,6 a 0,8 ms por tick no mapa médio (era 0,6). O movimento passou de
+  ~0,1 para ~0,25 ms com a busca de caminho; as estações custam 0,002 ms.
+
 **Aberto / próximo:**
-- Não há busca de caminho: a criatura anda em linha reta e desliza no obstáculo.
-  Aguenta bem o mapa aberto; se um dia precisar de A\*, o lugar é
-  `src/sim/movimento.ts` — o resto do jogo não sabe como ela chega lá.
-- Não há som, nem animação de sprite (cada criatura tem duas poses, esquerda e
-  direita).
-- O equilíbrio entre os quatro povos ainda varia bastante de semente para
-  semente: é comum um povo dominar e outro sumir (a refundação traz de volta).
-- Estações do ano não existem. **Clima existe**: nuvens atravessam o mundo com o
-  vento, chovem (apagando incêndio) e nevam onde faz frio (`src/sim/clima.ts`).
-- Conhecimento e tecnologia existem desde 02/09/2026 (ver "Tecnologia" na
-  seção 3, e "Tecnologia de pé" acima). O que sobrou daquela pendência está no
-  item 3 do `ROTEIRO.md`: **banco** e **poço** ficam de pé no mapa sem efeito
-  mecânico (no código, só aparecem na fila de obras), e o sistema de
-  **profissões** não existe.
-- O comércio usa preço fixo (`VALOR_MATERIAL`); oferta e procura ainda não mexem
-  no preço.
+- A dominância de um povo por partida continua alta (44% a 52%), e um povo
+  some do mapa por um tempo em uns 8% das partidas. Os números que sobram para mexer
+  estão no `balanco.ts` e nos dados dos povos; medir com `npm run equilibrio`
+  antes de qualquer um, e com doze sementes ou mais: com menos, o ruído é
+  maior que o efeito.
+- O worldbox-2 não tem o botão de atualizar pelas releases do GitHub que a
+  regra da raiz pede para todo app (seção 6, "Atualização dentro do app"). O
+  repositório é privado, então isso pede ou um token só de leitura ou tornar o
+  repositório público, e as duas coisas são decisão do Felipe.
+- Árvore no inverno continua verde (a neve cobre o chão, não a copa).

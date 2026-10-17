@@ -17,6 +17,9 @@ import { MATERIAIS } from '../src/dados/materiais.js';
 import { equipamentos } from '../src/dados/equipamentos.js';
 import { edificios } from '../src/dados/edificios.js';
 import { MARCA_SOLDADO } from '../src/core/criaturas.js';
+import { NOME_OFICIO, TOTAL_OFICIOS, oficioDe } from '../src/sim/profissoes.js';
+import { NOME_ESTACAO, estacaoDe } from '../src/sim/estacoes.js';
+import { fatorDePreco } from '../src/sim/economia.js';
 
 interface Opcoes {
   ticks: number;
@@ -190,6 +193,29 @@ traços: ${comTraco} de ${civis} inteligentes têm algum`);
         console.log(`  ${linhas.join(' · ')}`);
       }
     }
+  }
+
+  // ------------------------------------------------- ofícios, preço e estação
+  // O termômetro da versão 2: se quase todo adulto tem ofício, se os de casa
+  // existem onde há prédio para eles, e se o mercado se mexeu do preço base.
+  {
+    const c = mundo.criaturas;
+    const conta = new Int32Array(TOTAL_OFICIOS);
+    let pericia = 0;
+    let adultos = 0;
+    for (let i = 0; i < c.limite; i++) {
+      if (!c.vivo[i] || ESP_INTELIGENTE[c.especie[i]] === 0 || c.aldeia[i] < 0) continue;
+      if (c.idade[i] < c.longevidade[i] * BAL.fracaoAdulto) continue;
+      adultos++;
+      conta[oficioDe(c, i)]++;
+      pericia += c.pericia[i];
+    }
+    console.log('');
+    console.log(`ofícios (${adultos} adultos em vila · perícia média ${adultos ? Math.round((pericia / adultos) * 100) : 0}%):`);
+    console.log('  ' + [...conta].map((n, o) => `${NOME_OFICIO[o]} ${n}`).join(' · '));
+    console.log(`estação: ${NOME_ESTACAO[estacaoDe(mundo.tick)]} · linha da neve ${mundo.linhaNeve}`);
+    console.log('preços: ' + MATERIAIS.filter((m) => m !== 'ouro')
+      .map((m) => `${m} ${Math.round(fatorDePreco(mundo, m) * 100)}%`).join(' · '));
   }
 
   // ------------------------------------------------------------ equipamento

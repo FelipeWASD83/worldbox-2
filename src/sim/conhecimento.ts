@@ -6,6 +6,7 @@ import { BAL } from './balanco.js';
 import { ESP_CIVILIZADO } from '../dados/especies.js';
 import { Campo } from '../dados/tracos.js';
 import { fator } from './genetica.js';
+import { Oficio, oficioDe } from './profissoes.js';
 
 /**
  * O que o reino aprende, com o que ele aprende, e o que isso destranca.
@@ -54,11 +55,18 @@ function contarSabedoria(mundo: Mundo): Float64Array {
   const c = mundo.criaturas;
   const saida = new Float64Array(mundo.reinos.length);
   for (let i = 0; i < c.limite; i++) {
-    if (!c.vivo[i] || c.tracos[i] === 0) continue;
+    if (!c.vivo[i]) continue;
     const r = c.reino[i];
     if (r < 0 || r >= saida.length) continue;
     if (ESP_CIVILIZADO[c.especie[i]] === 0) continue;
-    saida[r] += (fator(c.tracos[i], Campo.conhecimento) - 1) * BAL.conhecimentoPorSabio;
+    if (c.tracos[i] !== 0) {
+      saida[r] += (fator(c.tracos[i], Campo.conhecimento) - 1) * BAL.conhecimentoPorSabio;
+    }
+    // O estudioso é o ofício do saber: rende sempre, e o dobro com a perícia
+    // cheia. Na mesma varredura dos sábios para não pagar duas.
+    if (oficioDe(c, i) === Oficio.Estudioso) {
+      saida[r] += BAL.conhecimentoPorEstudioso * (1 + c.pericia[i]);
+    }
   }
   return saida;
 }

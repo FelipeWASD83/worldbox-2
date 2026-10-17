@@ -32,6 +32,8 @@ interface Empacotado {
   rng: number[];
   vulcoes: number[];
   vento: [number, number];
+  /** Fator de preço de cada material, na ordem de `MATERIAIS`. Save antigo não tem. */
+  precos?: number[];
   barcos: Barco[];
   registros: {
     especies: string[];
@@ -116,6 +118,7 @@ export function empacotar(mundo: Mundo): string {
     rng: mundo.rng.estado(),
     vulcoes: mundo.vulcoes,
     vento: [mundo.ventoX, mundo.ventoY],
+    precos: Array.from(mundo.precos),
     barcos: mundo.barcos,
     registros: {
       especies: especies.todos().map((e) => e.id),
@@ -164,6 +167,7 @@ export function empacotar(mundo: Mundo): string {
         cargaMaterial: paraB64(c.cargaMaterial),
         marcas: paraB64(c.marcas),
         xp: paraB64(c.xp),
+        pericia: paraB64(c.pericia),
         cdAtaque: paraB64(c.cdAtaque),
         abrigo: paraB64(c.abrigo),
         tempoAbrigo: paraB64(c.tempoAbrigo),
@@ -227,6 +231,12 @@ export function desempacotar(texto: string): Mundo {
   // investimento em madeira, e isso o jogador nota.
   mundo.barcos = d.barcos ?? [];
   [mundo.ventoX, mundo.ventoY] = d.vento ?? [0.014, 0.006];
+  // O mercado volta com o preço em que estava; save antigo começa no preço base.
+  if (Array.isArray(d.precos)) {
+    for (let k = 0; k < mundo.precos.length && k < d.precos.length; k++) {
+      mundo.precos[k] = Number(d.precos[k]) || 1;
+    }
+  }
   mundo.definirTetosDeFauna(mundo.densidadeFauna);
   if (Array.isArray(d.rng)) mundo.rng.restaurar(d.rng);
 
@@ -269,6 +279,7 @@ export function desempacotar(texto: string): Mundo {
   preencher(c.cargaMaterial, campos.cargaMaterial);
   preencher(c.marcas, campos.marcas);
   preencher(c.xp, campos.xp);
+  preencher(c.pericia, campos.pericia);
   preencher(c.cdAtaque, campos.cdAtaque);
   preencher(c.abrigo, campos.abrigo);
   preencher(c.tempoAbrigo, campos.tempoAbrigo);
@@ -307,6 +318,8 @@ export function desempacotar(texto: string): Mundo {
     // valor certo, porque `refazerFranja` a reconstrói do mapa na primeira
     // passada de expansão
     franja: a.franja ?? [],
+    // save anterior às profissões: a contagem é refeita na primeira passada
+    oficios: Array.isArray(a.oficios) ? a.oficios : [0, 0, 0, 0, 0, 0, 0, 0],
   }));
   // Save anterior aos clãs: as criaturas carregam números de clã que não
   // apontam para nada. `Mundo.cla()` devolve `undefined` para eles e todo mundo

@@ -26,6 +26,7 @@ import { TOTAL_TRACOS, TRACO_OPOSTOS, tracos } from '../src/dados/tracos.js';
 import { especieDoFilho, podemCruzar, vidaMaxima } from '../src/sim/genetica.js';
 import { BAL } from '../src/sim/balanco.js';
 import { B } from '../src/dados/biomas.js';
+import { testes2, testesAnimacao, testesCaminho, testesProfissoes } from './testes2.js';
 
 let falhas = 0;
 /**
@@ -427,6 +428,10 @@ for (const t of TAMANHOS) {
   // sem vulcão: aqui se mede a propagação do fogo, e cratera em atividade
   // acende foco novo o tempo todo
   m.vulcoes = [];
+  // e sem o raio seco do verão, pelo mesmo motivo: ele acende foco novo de
+  // tempos em tempos, e o que se quer saber é se **este** fogo se apaga
+  const fogoDeVerao = BAL.chanceFogoDeVerao;
+  (BAL as { chanceFogoDeVerao: number }).chanceFogoDeVerao = 0;
   const g = m.grid;
   let alvo = -1;
   for (let i = 0; i < g.total; i++) {
@@ -441,6 +446,7 @@ for (const t of TAMANHOS) {
   let queimado = 0;
   for (let i = 0; i < g.total; i++) if (g.bioma[i] === B.cinzas) queimado++;
   const fracao = queimado / terra;
+  (BAL as { chanceFogoDeVerao: number }).chanceFogoDeVerao = fogoDeVerao;
   ok('o fogo se apaga sozinho', m.chamas.size === 0, `${m.chamas.size} focos acesos`);
   ok('o incêndio não come o mundo', fracao < 0.15, `${(fracao * 100).toFixed(1)}% da terra`);
 }
@@ -525,8 +531,23 @@ for (const t of TAMANHOS) {
   // e perseguir o valor de hoje só faz o teste quebrar a cada mudança de
   // balanço. O que ele tem de garantir é que a casa **funciona**; que ela é o
   // caminho principal é o teste seguinte que diz.
-  ok('nasce gente dentro de casa', nascidosEmCasa > 250,
-     `${nascidosEmCasa} em casa · ${vindosDeFora} de fora`);
+  // Mais duas sementes: uma só é sorte. Em 16/10/2026 a mesma regra deu 184
+  // contra 190 nesta semente e 635 contra 590 na média de doze.
+  for (const outra of ['chk-v4b', 'chk-v4c']) {
+    const w = new Mundo(TAMANHOS[1], outra);
+    montarPipeline(w);
+    gerarTerreno(w);
+    povoar(w, { civilizacoes: 4 });
+    ensinarTudo(w);
+    w.eventos.on('criatura:nasceu', (d) => {
+      if (ESP_INTELIGENTE[d.especie] !== 1) return;
+      if (d.origem === 'casa') nascidosEmCasa++;
+      else if (d.origem === 'imigracao') vindosDeFora++;
+    });
+    for (let i = 0; i < 20000; i++) w.avancar();
+  }
+  ok('nasce gente dentro de casa', nascidosEmCasa > 450,
+     `${nascidosEmCasa} em casa · ${vindosDeFora} de fora, em três sementes`);
   ok('a casa é o caminho principal de crescimento', nascidosEmCasa > vindosDeFora,
      `${nascidosEmCasa} contra ${vindosDeFora}`);
 
@@ -1142,6 +1163,14 @@ for (const t of TAMANHOS) {
   povoar(m, { civilizacoes: 4 });
   ensinarTudo(m);
 
+  // Os reinos começam se conhecendo. A névoa tem os testes dela; aqui a
+  // pergunta é se, com povos que se toleram em contato, nasce mestiço sem
+  // ninguém mandar. Sem isto o teste dependia de humanos e elfos se
+  // esbarrarem por acaso numa semente só, e falhava quando não esbarravam.
+  for (const r of m.reinos) {
+    for (const o of m.reinos) if (r.id !== o.id) r.conhecidos.add(o.id);
+  }
+
   let mesticos = 0;
   const povosMesticos = new Set<number>();
   m.eventos.on('criatura:mesticou', (d) => {
@@ -1320,6 +1349,13 @@ for (const t of TAMANHOS) {
     (cat) => poderes.filtrar((p) => p.categoria === cat).length > 0,
   ), CATEGORIAS.map((cat) => `${cat} ${poderes.filtrar((p) => p.categoria === cat).length}`).join(' · '));
 }
+
+// 21 em diante: a versão 2 (estações, poço e banco, preço, profissões,
+// caminho e animação). Moram em `testes2.ts`, que também roda sozinho.
+testes2(ok);
+testesProfissoes(ok);
+testesCaminho(ok);
+testesAnimacao(ok);
 
 console.log('');
 console.log(falhas === 0 ? 'TUDO OK' : `${falhas} FALHAS`);

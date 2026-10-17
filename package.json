@@ -1,6 +1,6 @@
 {
   "name": "worldbox-2",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "WorldBox 2 — sandbox de simulação de mundo: terreno, animais e civilizações.",
   "type": "module",
   "private": true,
@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit",
     "diag": "tsx tools/diagnostico.ts",
     "testar-app": "vite build && node scripts/testar-app.mjs",
-    "test": "tsx tools/testar.ts"
+    "test": "tsx tools/testar.ts",
+    "equilibrio": "tsx tools/equilibrio.ts",
+    "prints": "vite build && node scripts/prints-app.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

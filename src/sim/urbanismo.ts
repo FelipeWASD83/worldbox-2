@@ -77,7 +77,6 @@ const PASSO = LOTE + 6;
  * Devolve o índice do tile do canto superior esquerdo, ou -1.
  */
 export function acharLote(mundo: Mundo, a: Aldeia, tipo: number): number {
-  const g = mundo.grid;
   const largura = ED_OCUPA[tipo * 2];
   const profundidade = ED_OCUPA[tipo * 2 + 1];
 
@@ -112,6 +111,32 @@ export function acharLote(mundo: Mundo, a: Aldeia, tipo: number): number {
     if (noMeio >= 0) return noMeio;
   }
 
+  // A mina procura primeiro um lote que entre na rocha, e só sem nenhum aceita
+  // chão plano. Antes ela só tinha **permissão** de ir para a serra e ia para
+  // o primeiro lote livre do anel: num mundo, de duas minas, nenhuma estava
+  // na montanha, e a obra que existe para entrar na rocha virava um galpão no
+  // meio do campo.
+  if (tipo === ED.mina) {
+    const naRocha = varrerAneis(mundo, a, largura, profundidade, tipo, true);
+    if (naRocha >= 0) return naRocha;
+  }
+  return varrerAneis(mundo, a, largura, profundidade, tipo, false);
+}
+
+/** O lote tem pelo menos um tile de rocha? */
+function loteTemRocha(g: Mundo['grid'], x: number, y: number, largura: number, profundidade: number): boolean {
+  for (let dy = 0; dy < profundidade; dy++) {
+    for (let dx = 0; dx < largura; dx++) if (g.ehMontanha(g.idx(x + dx, y + dy))) return true;
+  }
+  return false;
+}
+
+/** Percorre os anéis da malha em volta da praça atrás do primeiro lote que sirva. */
+function varrerAneis(
+  mundo: Mundo, a: Aldeia, largura: number, profundidade: number, tipo: number,
+  soNaRocha: boolean,
+): number {
+  const g = mundo.grid;
   const alcance = aneisDaAldeia(a);
 
   for (let anel = 0; anel <= alcance; anel++) {
@@ -123,7 +148,10 @@ export function acharLote(mundo: Mundo, a: Aldeia, tipo: number): number {
       for (let d = 0; d < MEIOS.length; d += 2) {
         const x = a.x + cx * PASSO + MEIOS[d] - (largura >> 1);
         const y = a.y + cy * PASSO + MEIOS[d + 1] - (profundidade >> 1);
-        if (loteServe(mundo, a, x, y, largura, profundidade, tipo)) return g.idx(x, y);
+        if (loteServe(mundo, a, x, y, largura, profundidade, tipo)) {
+          if (!soNaRocha || loteTemRocha(g, x, y, largura, profundidade)) return g.idx(x, y);
+          continue;
+        }
         // A célula da malha vale **uma** obra. Se a posição principal foi
         // recusada porque já tem prédio ali, a célula está usada e acabou; as
         // posições de meio passo só entram quando o que barrou foi o terreno.

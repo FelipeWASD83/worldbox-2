@@ -10,6 +10,24 @@ export const BAL = {
   /** Teto de fatias quando o mundo enche. Mais fatias = decisão mais rara e mais barata. */
   fatiasMaxIA: 12,
 
+  // -------------------------------------------------------- busca de caminho
+  /**
+   * Quantas rotas o mundo calcula por tick, no máximo.
+   *
+   * A busca só acontece quando a linha reta bate em obstáculo, e mesmo assim é
+   * o que custa mais por chamada no jogo. Quem pede além do teto anda como
+   * sempre andou (deslizando pelo eixo livre) e pede de novo no tick seguinte.
+   */
+  buscasPorTick: 12,
+  /** Raio da janela em que a busca olha, em tiles (teto 64). */
+  janelaDaBusca: 28,
+  /** Nós expandidos por busca antes de desistir. */
+  nosPorBusca: 1200,
+  /** Quanto um passo em serra pesa na rota, contra 1 do chão plano. */
+  custoDaSerraNaRota: 2.2,
+  /** Ticks que a criatura espera para pedir rota de novo depois de uma busca que falhou. */
+  esperaDepoisDeFalhar: 200,
+
   // ------------------------------------------------------------------ vida
   /** Fome ganha por tick. Em 100 a criatura começa a passar mal. */
   fomePorTick: 0.055,
@@ -63,8 +81,32 @@ export const BAL = {
    * chegava mais gente de fora do que nascia dentro das casas.
    */
   imigracaoParaAldeia: 0.11,
-  /** Chance de um morador largar a lida para procurar casa e ter filho. */
-  vontadeDeFamilia: 0.45,
+  /**
+   * Quanto cada casa da vila apaga a chegada de gente de fora.
+   *
+   * A chance de imigrar é dividida por (1 + casas vezes isto): a imigração é a
+   * rede da vila que ainda não tem onde nascer ninguém, e vai sumindo conforme
+   * as casas aparecem. Estava escrito como 1,4 no meio da lógica de
+   * `civilizacao.ts`; subiu para 3 na v2.0, quando a ninhada menor dos orcs
+   * deixou os nascidos em casa atrás dos chegados de fora (626 contra 691 de
+   * média em doze sementes). Com 3 a casa voltou a ser o caminho principal
+   * (547 contra 443) e a fatia dos povos ficou a mais parelha das rodadas
+   * (humano 25%, elfo 15%, anão 30%, orc 30%). Com 1,9 a casa ganhava por
+   * pouco (626 contra 569).
+   */
+  imigracaoSomePorCasa: 3,
+  /**
+   * Chance de um morador largar a lida para procurar casa e ter filho.
+   *
+   * Subiu de 0,45 na v2.0. Com os ofícios a gente passa mais tempo na lida, e
+   * a ninhada dos orcs caiu para o equilíbrio entre os povos; os dois juntos
+   * baixaram os nascidos em casa. Medido em doze sementes (`npm run
+   * equilibrio`): com 0,6 os elfos foram de 13% para 17% e nenhum povo sumiu.
+   * Baixar a imigração inteira no lugar disto (0,08 e 0,095) foi testado e fez
+   * povo sumir do mapa; o que entrou foi `imigracaoSomePorCasa`, que só tira
+   * imigrante de vila que já tem casa.
+   */
+  vontadeDeFamilia: 0.6,
   /** Quanto tempo um casal fica dentro de casa tentando ter filho. */
   tempoDentroDeCasa: 110,
   /** Distância máxima entre o par. */
@@ -201,6 +243,48 @@ export const BAL = {
   vegetacaoPorChuva: 7,
   /** Abaixo desta temperatura a nuvem neva em vez de chover. */
   temperaturaDaNeve: 70,
+
+  // --------------------------------------------------------------- estações
+  /**
+   * Quanto a linha da neve sobe no auge do inverno, em pontos de temperatura.
+   *
+   * Um terço da terra firme já fica abaixo de `temperaturaDaNeve` o ano todo
+   * (tundra, taiga, serra). Com 50, o inverno cobre de branco mais um quarto do
+   * chão — o campo temperado — e devolve tudo na primavera. Mais que isso e o
+   * inverno vira era do gelo; menos, e ele só se vê no pé da serra.
+   */
+  neveDoInverno: 50,
+  /** De quantos em quantos pontos a linha da neve anda (cada passo redesenha a faixa que mudou). */
+  degrauDaNeve: 6,
+  /**
+   * Multiplicadores por estação, na ordem primavera, verão, outono, inverno.
+   *
+   * A média de cada linha fica perto de 1 **de propósito**: as estações mudam
+   * quando as coisas acontecem, não quanto acontece no ano. Com médias abaixo
+   * de 1 o inverno seria só um corte disfarçado na comida do mundo inteiro.
+   */
+  estacaoLavoura: [1.0, 0.8, 1.6, 0.6],
+  /** Crescimento do mato e rebrota. No inverno, o chão coberto de neve não cresce nada. */
+  estacaoVegetacao: [1.6, 1.05, 0.85, 0.5],
+  /** Vontade de os bichos procurarem par. É a primavera dos filhotes. */
+  estacaoCio: [1.0, 0.7, 0.45, 0.2],
+  /** Fração das nuvens que vem carregada, relativa a `chanceNuvemDeChuva`. */
+  estacaoChuva: [1.15, 0.6, 1.05, 1.2],
+  /** Quanto o fogo pula de um tile para o outro. */
+  estacaoFogo: [0.85, 1.45, 1.0, 0.5],
+  /** Lavoura de vila coberta de neve rende ainda menos que o inverno comum. */
+  lavouraNaNeve: 0.4,
+  /**
+   * Incêndio espontâneo no verão: chance por sorteio, a cada `intervaloFogoDeVerao`.
+   *
+   * Só pega em tile quente, seco e com o que queimar. Pequeno de propósito: é
+   * o raio seco que de vez em quando lambe uma savana, não um mundo em chamas.
+   */
+  chanceFogoDeVerao: 0.22,
+  intervaloFogoDeVerao: 50,
+  /** Temperatura mínima e umidade máxima para o verão acender um tile sozinho. */
+  temperaturaDoFogoDeVerao: 150,
+  umidadeDoFogoDeVerao: 120,
 
   // ---------------------------------------------------------------- vulcões
   /** A cada quantos ticks uma erupção é sorteada. */
@@ -357,6 +441,53 @@ export const BAL = {
   fracaoSoldados: 0.35,
   /** Fração quando o jogador manda a aldeia focar no exército. */
   fracaoSoldadosEmGuerraTotal: 0.7,
+
+  // ------------------------------------------------------------ profissões
+  /** A cada quantos ticks a vila redistribui os ofícios. */
+  intervaloProfissoes: 100,
+  /**
+   * Fatia dos adultos que cada ofício de casa leva, e o teto em gente.
+   *
+   * Construtor, ferreiro, mercador e estudioso **não saem para buscar
+   * material**: trabalham na vila, e o efeito deles é sobre a vila inteira.
+   * Por isso as fatias são pequenas — cada um deles é um braço a menos na
+   * lavoura e na mata, e com fatias de um quarto a vila passava fome com o
+   * celeiro cheio de livro.
+   */
+  fatiaConstrutores: 0.1,
+  fatiaFerreiros: 0.06,
+  maxFerreirosPorFerraria: 2,
+  fatiaMercadores: 0.06,
+  maxMercadores: 4,
+  fatiaEstudiosos: 0.06,
+  estudiososPorBiblioteca: 3,
+  /** Quanto a perícia cheia multiplica o que um trabalhador do ofício entrega. */
+  bonusDePericia: 0.5,
+  /** Perícia ganha por carga entregue no próprio ofício, e por passada em ofício de casa. */
+  periciaPorCarga: 0.1,
+  periciaPorPassada: 0.02,
+  /** Fração da perícia que sobra ao trocar de ofício. */
+  periciaAoTrocar: 0.35,
+  /**
+   * Quanto a perícia segura a pessoa no ofício quando a vila quer trocá-la.
+   *
+   * A chance de trocar é 1 menos isto vezes a perícia: o mestre lenhador quase
+   * nunca é mandado para a mina, o aprendiz vai sem discutir. Sem isto a troca
+   * caía em quem estivesse primeiro no pool, e a perícia média do mundo não
+   * passava de 7%.
+   */
+  apegoAoOficio: 0.8,
+  /** Quanto a mais de pressa cada construtor dá à obra, sobre a espera normal (teto 2×). */
+  pressaPorConstrutor: 0.12,
+  /** Desconto no equipamento por ferreiro, com perícia cheia (teto 40%). */
+  descontoPorFerreiro: 0.15,
+  /** Negócios a mais por rodada de comércio a cada dois mercadores, e o ganho na exportação. */
+  exportacaoPorMercador: 0.06,
+  /** Conhecimento por estudioso, por avaliação (dobra com perícia cheia). */
+  conhecimentoPorEstudioso: 0.35,
+  /** Dano a mais do soldado de vila com quartel, e a experiência que ele ganha treinando. */
+  danoComQuartel: 1.2,
+  treinoNoQuartel: 0.4,
 
   // ------------------------------------------------------------- genética
   /**
@@ -585,10 +716,50 @@ export const BAL = {
   margemComercio: 1.25,
   /** Quanto um negócio aproxima dois reinos. */
   amizadePorNegocio: 1.2,
+  /**
+   * O que o banco faz.
+   *
+   * O cofre multiplica o teto de ouro da vila (sem banco, o ouro disputa o
+   * mesmo celeiro que a madeira). Os juros entram por rodada de comércio, sobre
+   * o ouro guardado na vila e, com um banco em qualquer vila do reino, sobre o
+   * tesouro da coroa. O crédito é o desconto na margem de quem compra: a vila
+   * com banco paga o negócio a prazo e o vendedor aceita menos.
+   */
+  cofreDoBanco: 4,
+  jurosDoBanco: 0.012,
+  jurosDoTesouro: 0.004,
+  margemComBanco: 1.08,
+  /**
+   * O que o poço faz.
+   *
+   * Cada poço (até o máximo do prédio) põe esta fração a mais na lavoura da
+   * vila, e com pelo menos um a seca do verão não pega nela. Dentro do
+   * território de vila com poço, o fogo queima `fogoComPoco` vezes mais rápido
+   * até se apagar — é a fila de baldes — e pula menos para o vizinho.
+   */
+  irrigacaoPorPoco: 0.12,
+  fogoComPoco: 3,
+  espalhaComPoco: 0.4,
   /** Fração acima da necessidade a partir da qual a aldeia exporta. */
   folgaParaExportar: 1.6,
   /** Quanto a caravana de fora paga, em relação ao valor base. */
   precoExportacao: 0.7,
+  /**
+   * Preço por oferta e procura.
+   *
+   * Cada material tem um fator sobre `VALOR_MATERIAL`, o mesmo para o mundo
+   * inteiro (é um mercado só: as caravanas levam a notícia do preço junto). A
+   * cada rodada de comércio ele anda `mareDoPreco` da distância até o alvo, e o
+   * alvo é a raiz de (quem quer comprar + 1) / (quem tem para vender + 1).
+   * Raiz porque a razão crua dava saltos de 5× quando três vilas pediam a mesma
+   * coisa e ninguém tinha.
+   */
+  mareDoPreco: 0.12,
+  precoMinimo: 0.4,
+  precoMaximo: 3,
+  /** Quanto cada negócio fechado encarece o material, e cada lote exportado barateia. */
+  altaPorNegocio: 1.03,
+  baixaPorExportacao: 0.985,
   /**
    * Relação mínima para dois reinos não aliados negociarem entre si.
    *

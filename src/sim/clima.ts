@@ -2,6 +2,7 @@ import type { Sistema } from '../core/sistemas.js';
 import type { Mundo } from '../core/mundo.js';
 import { B } from '../dados/biomas.js';
 import { BAL } from './balanco.js';
+import { daEstacao } from './estacoes.js';
 
 /**
  * Nuvens andando pelo mundo, e o que elas deixam cair.
@@ -68,7 +69,9 @@ function semearNuvens(mundo: Mundo): void {
   }
 
   const sorte = mundo.rng.f();
-  const tipo = sorte < BAL.chanceNuvemDeChuva ? 1 : 0;
+  // O verão traz menos nuvem carregada e o inverno mais: é metade do que faz a
+  // estação seca ser seca (a outra metade é o fogo, em `estacoes.ts`).
+  const tipo = sorte < BAL.chanceNuvemDeChuva * daEstacao(mundo, BAL.estacaoChuva) ? 1 : 0;
 
   // A vida é **calculada da travessia**, não sorteada.
   //
@@ -157,7 +160,9 @@ function precipitar(mundo: Mundo): void {
       // Frio faz nevar em vez de chover, e a nuvem inteira muda de cara — é o
       // que faz uma frente atravessar o continente chovendo no campo e nevando
       // quando alcança a serra.
-      if (g.temp[i] < BAL.temperaturaDaNeve) {
+      // A linha sobe no inverno: a mesma frente que chove no campo em maio
+      // neva nele em agosto.
+      if (g.temp[i] < Math.max(BAL.temperaturaDaNeve, mundo.linhaNeve)) {
         n.tipo = 2;
         if (g.bioma[i] !== B.neve && g.bioma[i] !== B.gelo && g.bioma[i] !== B.pico) {
           if (mundo.rng.chance(0.02)) {

@@ -43,20 +43,22 @@ O instalador sai na pasta `release/`.
 **A tela inteira é o mundo.** Tudo o que é interface fica numa barra embaixo,
 sempre visível, dividida em abas:
 
-- **terreno · vida · destruição · reinos** — as 32 ferramentas, agrupadas. A
-  primeira (a mira) é o modo de olhar, sem mexer em nada.
+- **as oito abas de ferramentas** (terreno, biomas, natureza, vida, obras,
+  destruição, reinos, saber), com as 188 ferramentas. A primeira (a mira) é o
+  modo de olhar, sem mexer em nada.
 - **inspetor** — abre sozinha quando você clica em alguma coisa no mapa, e mostra
   os detalhes dela. Se for uma aldeia (ou um morador), o **painel de ordens**
   aparece ao lado: foco do trabalho, fundar colônia, socorrer, diplomacia.
-- **mundo** — a lista do que está vivo e a **crônica**: a história se escrevendo
+- **mundo**: a estação, os **preços** de cada material, a lista do que está
+  vivo e a **crônica**: a história se escrevendo
   sozinha, com reinos fundados, guerras, alianças, aldeias que viraram cidade e
   aldeias que viraram ruína.
-- **ajustes** — mostrar territórios e nomes, tamanho do pincel, e os botões de
-  novo mundo, salvar e carregar.
+- **ajustes**: mostrar territórios e nomes, tamanho do pincel, **volume do
+  som** (e "sem som"), e os botões de novo mundo, salvar e carregar.
 
 À esquerda da barra fica o **minimapa** — clique nele para pular para lá. Embaixo
-de tudo, a velocidade (de pausado a 8×) e os números do mundo: ano, população,
-reinos e guerras.
+de tudo, a velocidade (de pausado a 8×) e os números do mundo: ano, estação
+(numa cor por estação), população, reinos e guerras.
 
 **O zoom troca o que a tela conta.** De longe é um mapa político: as fronteiras
 saem em blocos na cor de cada reino e cada reino aparece uma vez, com o povo e a
@@ -154,18 +156,23 @@ Cada aldeia guarda comida, madeira, pedra, ferro, carvão e ouro, com um teto qu
 cresce conforme ela ergue celeiros. Os moradores saem para buscar exatamente o
 que está faltando em casa.
 
-Dezenove tipos de construção. As que já fazem efeito: casa (abriga e é onde
-nascem os filhos), celeiro (guarda mais), fazenda (produz comida), **moinho de
-vento** (rende mais comida e nasce cercado de lavoura), **serraria** (rende mais
-madeira), **mina** (rende mais minério e é a única obra que entra na montanha),
-**ferraria** (sem ela não se faz espada), **mercado** (compra e vende),
-**templo** (mantém o ânimo), muralha, torre, castelo e ruína — que desmorona
-sozinha com o tempo.
+Vinte tipos de construção, e todos fazem alguma coisa: casa (abriga e é onde
+nascem os filhos), fogueira (a casa da era tribal), celeiro (guarda mais),
+fazenda (produz comida), **moinho de vento** (rende mais comida e nasce cercado
+de lavoura), **serraria** (rende mais madeira), **mina** (rende mais minério e é
+a única obra que entra na montanha), **ferraria** (sem ela não se faz espada, e
+é onde trabalham os ferreiros), **mercado** (compra e vende),
+**templo** (mantém o ânimo), **biblioteca, prefeitura, templo e taverna**
+(geram o conhecimento do reino), **porto** (barcos), muralha, torre, castelo e
+ruína, que desmorona sozinha com o tempo.
 
-As que existem no mapa e ainda esperam a sua vez: **prefeitura, banco,
-biblioteca, taverna, quartel e poço**. Custam material, aparecem na vila e
-mudam o desenho dela; o que cada uma vai fazer entra no update de política e
-civilizações.
+- **Poço**: rega a lavoura da vila (cada um, até dois, rende mais comida), faz
+  a seca do verão não pegar nela e apaga incêndio dentro do território várias
+  vezes mais rápido. É a fila de baldes.
+- **Banco**: guarda o ouro num cofre próprio (quatro vezes o celeiro), rende
+  juros à vila e ao tesouro do reino, e a vila com banco compra mais barato.
+- **Quartel**: treina os soldados da vila. Eles ganham experiência no pátio e
+  batem mais forte quando a guerra chega.
 
 As aldeias não espalham as obras ao acaso: cada construção vai para um lote de
 uma malha ancorada na praça central, e uma **estrada** liga o lote ao centro. É
@@ -182,8 +189,66 @@ enche, o reino só cresce de um jeito — mandando colonos fundar outra vila. É
 isso que um império aparece no mapa como um punhado de povoados ligados, e não
 como uma mancha só que engorda para sempre.
 
-Quem tem mercado escoa o excedente e compra o que falta, pagando em ouro —
-mas só de aldeias do próprio reino ou de reinos aliados.
+Quem tem mercado escoa o excedente e compra o que falta, pagando em ouro, de
+qualquer reino que conheça e com quem não esteja em guerra.
+
+**O preço muda com a oferta e a procura.** Cada material tem um preço do mundo
+inteiro: sobe quando muita vila precisa dele e pouca tem para vender, e desce
+quando sobra. Cada negócio fechado encarece um pouco o que foi comprado, e cada
+lote exportado barateia. A aba *mundo* mostra o preço de cada coisa, com uma
+seta quando ele está acima ou abaixo do normal.
+
+### Gente com ofício
+
+Todo adulto de uma vila tem um **ofício**, e a vila decide quantos de cada pelo
+que está faltando no celeiro e pelo foco que você mandou:
+
+- **lavrador, lenhador e mineiro** saem atrás do material deles. Quando o
+  material do ofício sobra, ajudam no que falta.
+- **construtor** faz a vila erguer obras mais depressa.
+- **ferreiro** (só onde há ferraria) deixa o equipamento mais barato.
+- **mercador** (só onde há mercado) vive do comércio.
+- **estudioso** (onde há biblioteca, prefeitura ou templo) faz o reino
+  descobrir mais rápido.
+
+Cada um ganha **perícia** com o trabalho: o lenhador de vinte anos de mata traz
+metade a mais de madeira que o aprendiz. Quem troca de ofício perde quase toda
+a perícia, então a vila evita mexer em quem é bom. Se faltar comida, todo mundo
+larga o ofício e vai buscar. Clique numa pessoa para ver o ofício dela.
+
+### As estações
+
+O ano tem **primavera, verão, outono e inverno**, e a barra de baixo mostra em
+qual o mundo está.
+
+- **Primavera**: o mato cresce rápido e os bichos têm filhote.
+- **Verão**: chove menos, a lavoura rende menos (a não ser na vila com poço) e
+  a savana seca pega fogo sozinha de vez em quando.
+- **Outono**: a colheita. A lavoura rende muito mais.
+- **Inverno**: a neve cobre o campo das terras mais frias, o mato para de
+  crescer, a lavoura quase não rende e quase nenhum bicho tem filhote. A vila
+  vive do que guardou no celeiro.
+
+A neve vem e vai com o ano: o chão não muda de tipo, só fica branco por cima.
+
+### O som
+
+O mundo tem som, todo gerado na hora, sem arquivo: o vento quando a câmera está
+longe, o mar sobre o oceano, a chuva debaixo das nuvens, o fogo crepitando, e
+passarinho na primavera quando você chega perto. Os acontecimentos também
+soam: o trovão do raio, o estrondo do meteoro e do vulcão, o sino de vila
+fundada, a trompa da guerra, o acorde da paz. O que acontece num lugar só se
+ouve se ele estiver na tela, do lado em que está. O som começa no primeiro
+clique; o volume e o "sem som" ficam na aba de ajustes.
+
+### Os bichos andam de verdade
+
+De perto, quem está indo a algum lugar dá passos: as pernas alternam, o
+pássaro bate a asa, o peixe balança o rabo, a cobra ondula. Com o jogo
+pausado, todo mundo congela no meio do passo.
+
+E ninguém mais fica preso: quem tem para onde ir e bate num lago, num rio ou
+numa enseada **procura o caminho** e contorna. O peixe faz o mesmo com a terra.
 
 ### Equipamento
 
@@ -408,6 +473,8 @@ npm test          # testes do motor, sem abrir janela
 npm run sim       # roda milhares de anos e relata população, economia, guerras
 npm run diag      # de que cada espécie morreu e quem matou quem
 npm run testar-app  # abre o aplicativo, exercita os painéis e fecha
+npm run equilibrio  # roda várias sementes e mede o equilíbrio entre os povos
+npm run prints -- prints  # abre o app e salva prints de conferência em PNG
 npm run typecheck
 ```
 

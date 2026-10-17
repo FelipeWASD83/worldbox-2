@@ -15,6 +15,7 @@ import { materialDoReino } from '../sim/conhecimento.js';
 import { NOME_ERA, tecnologias } from '../dados/tecnologias.js';
 import { NOME_FOCO, focoDe } from '../sim/comandos.js';
 import { ancoraDaConstrucao } from '../sim/urbanismo.js';
+import { NOME_OFICIO, TOTAL_OFICIOS, oficioDe } from '../sim/profissoes.js';
 
 /**
  * Painel do que está selecionado: uma criatura, uma aldeia ou um pedaço de
@@ -122,6 +123,10 @@ export class Inspetor {
           ? `governa ${mundo.aldeias[c.aldeia[i]]?.nome ?? '?'}`
           : null;
       if (cargo) this.alvo.append(dado('cargo', cargo));
+      const oficio = oficioDe(c, i);
+      if (oficio !== 0) {
+        this.alvo.append(dado('ofício', `${NOME_OFICIO[oficio]} · perícia ${Math.round(c.pericia[i] * 100)}%`));
+      }
       this.alvo.append(dado('riqueza', `${c.riqueza[i].toFixed(0)} de ouro`));
       // O que esta pessoa é de nascença — o que não muda quando ela perde o
       // cargo ou a fortuna. A dica de cada linha traz o que o traço faz.
@@ -203,6 +208,13 @@ export class Inspetor {
     }
     this.alvo.append(dado('imposto', `${(a.imposto * 100).toFixed(0)}%`));
 
+    // quem faz o quê: a contagem da última redistribuição de ofícios
+    const oficios: string[] = [];
+    for (let o = 1; o < TOTAL_OFICIOS; o++) {
+      if (a.oficios[o] > 0) oficios.push(`${a.oficios[o]} ${NOME_OFICIO[o]}`);
+    }
+    if (oficios.length > 0) this.alvo.append(dado('ofícios', oficios.join(', ')));
+
     // A lealdade média da vila é o número que diz se ela está prestes a virar
     // um reino novo. Vermelho abaixo de 26 é literalmente o limiar da rebelião
     // (`BAL.lealdadeParaRebelar`).
@@ -217,7 +229,7 @@ export class Inspetor {
     for (const m of MATERIAIS) {
       this.alvo.append(dado(
         NOME_MATERIAL[m],
-        `${a.estoque[m].toFixed(0)} / ${a.capacidadeEstoque}`,
+        `${a.estoque[m].toFixed(0)} / ${Math.round(m === 'ouro' ? a.tetoOuro : a.capacidadeEstoque)}`,
       ));
     }
 

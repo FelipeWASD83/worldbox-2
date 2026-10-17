@@ -1,4 +1,5 @@
 import type { Mundo } from '../core/mundo.js';
+import { nevado } from '../sim/estacoes.js';
 import { BIOMA_AGUA, BIOMA_COR, biomas } from '../dados/biomas.js';
 import { REC_SPRITE } from '../dados/recursos.js';
 import {
@@ -472,7 +473,7 @@ export class CamadaTiles {
         const fazenda = ehLavoura(g, i) ? 1 : 0;
         h ^= g.bioma[i] + (g.estrada[i] << 6) + (fazenda << 7) +
           ((g.fogo[i] > 0 ? 1 : 0) << 8) + ((g.vegetacao[i] >> 5) << 9) +
-          ((g.territorio[i] + 1) << 12);
+          ((g.territorio[i] + 1) << 12) + ((g.temp[i] < this.mundo.linhaNeve ? 1 : 0) << 24);
         h = Math.imul(h, 16777619);
       }
     }
@@ -670,6 +671,19 @@ export class CamadaTiles {
         ctx.fillStyle = 'rgba(0,0,0,0.16)';
         ctx.fillRect(sx + 2, dy + 1, 1, PX - 2);
       }
+    }
+
+    // -------------------------------------------------------- neve do inverno
+    // Por cima do chão e da roça, por baixo do fogo. A rua fica de fora: é o
+    // caminho que o povo limpa, e é ele que mantém a vila legível no inverno.
+    if (g.estrada[i] !== 1 && nevado(this.mundo, i)) {
+      ctx.fillStyle = 'rgba(236,241,247,0.86)';
+      ctx.fillRect(dx, dy, PX, PX);
+      ctx.fillStyle = 'rgba(206,216,230,0.9)';
+      ctx.fillRect(dx + (matiz % 9), dy + ((matiz * 3) % 11), 4, 2);
+      ctx.fillRect(dx + ((matiz * 7) % 11), dy + ((matiz * 5) % 12), 3, 1);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(dx + ((matiz * 11) % 13), dy + ((matiz * 13) % 13), 2, 1);
     }
 
     // ----------------------------------------------------------------- fogo
