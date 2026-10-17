@@ -1046,9 +1046,8 @@ trinta mil ticks, mapa médio), antes e depois da versão:
   estão no `balanco.ts` e nos dados dos povos; medir com `npm run equilibrio`
   antes de qualquer um, e com doze sementes ou mais: com menos, o ruído é
   maior que o efeito.
-- O botão de atualizar existe desde a 2.1.0, mas **nenhuma release foi
-  publicada ainda**: até o Felipe rodar o `ferramentas\publicar-versao.ps1`
-  (depois do push), o botão responde que o repositório não tem versão
-  publicada, e o instalador de uma linha não tem de onde baixar. O teste com a
-  janela de verdade usou um GitHub de mentira.
+- A release v2.1.0 foi publicada em 17/10/2026 (a pedido do Felipe) e o
+  pacote baixado do GitHub confere com o SHA-256 dela. A troca de uma versão
+  publicada para outra ainda não aconteceu de verdade: só vai dar para ver
+  quando sair a próxima. O teste com a janela usou um GitHub de mentira.
 - Árvore no inverno continua verde (a neve cobre o chão, não a copa).
