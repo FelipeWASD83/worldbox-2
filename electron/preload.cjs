@@ -11,4 +11,10 @@ contextBridge.exposeInMainWorld('wb2', {
     pasta: () => ipcRenderer.invoke('app:pastaSaves'),
   },
   erroFatal: (mensagem) => ipcRenderer.invoke('app:erroFatal', mensagem),
+  atualizacao: {
+    estado: () => ipcRenderer.invoke('atualizacao:estado'),
+    checar: () => ipcRenderer.invoke('atualizacao:checar'),
+    baixar: () => ipcRenderer.invoke('atualizacao:baixar'),
+    reabrir: () => ipcRenderer.invoke('atualizacao:reabrir'),
+  },
 });

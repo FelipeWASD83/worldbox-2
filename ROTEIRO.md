@@ -47,6 +47,18 @@ soldado. As profissões também existem (ver v2.0 abaixo).
 
 ## Feito
 
+### v2.1: instalar e atualizar pelo botão
+A regra da raiz pede botão de atualizar pelas releases do GitHub em todo app.
+
+- O repositório virou público com MIT (escolha do Felipe, 17/10/2026).
+- `instalar.bat` e `instalador/instalar.ps1`: cópia de jogar em
+  `%LOCALAPPDATA%\WorldBox 2`, com o Electron oficial conferido e atalhos.
+- Inicializador que troca a versão e volta atrás sozinho quando a nova não
+  abre (`instalador/inicio/`).
+- Botão na aba de ajustes, zip próprio com caminho conferido, SHA-256
+  obrigatório, `npm run pacote` e `ferramentas\publicar-versao.ps1`.
+- `npm run testar-atualizacao` (com e sem a janela de verdade).
+
 ### v2.0: o ano, o ofício e o som
 Fechou os sete pontos que sobravam no "Aberto / próximo" do `CLAUDE.md`.
 

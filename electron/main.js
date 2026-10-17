@@ -2,10 +2,63 @@ import { app, BrowserWindow, ipcMain, dialog, session } from 'electron';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { criarAtualizador } from './atualizador.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RAIZ = path.join(__dirname, '..');
 const URL_DEV = process.env.WB2_DEV_URL || '';
+
+/**
+ * Pasta da cópia instalada, quando o jogo foi aberto pelo atalho (o
+ * inicializador de `instalador/inicio/` põe isto no ambiente). Vazio quando o
+ * jogo roda da pasta do projeto.
+ */
+const BASE_INSTALADA = process.env.WB2_INSTALADO || '';
+const atualizador = criarAtualizador({
+  raiz: RAIZ,
+  base: BASE_INSTALADA || null,
+  versaoElectron: process.versions.electron,
+});
+
+/**
+ * Avisa o inicializador se o jogo abriu de verdade. Versão recém-instalada que
+ * não avisa, ou que quebra antes, é desfeita por ele (ver `instalador/inicio`).
+ * "Abriu" é a janela mostrada e cinco segundos sem erro fatal: abrir a janela e
+ * quebrar no primeiro quadro não conta.
+ */
+let erroAntesDeConfirmar = false;
+function avisarQueAbriu() {
+  setTimeout(() => {
+    if (!erroAntesDeConfirmar) process.emit('wb2:abriu');
+    if (process.env.WB2_ROTEIRO_ATUALIZACAO) void roteiroDeAtualizacao();
+  }, 5000);
+}
+
+/**
+ * Roteiro do teste com janela (`npm run testar-atualizacao -- --electron`):
+ * só liga com `WB2_ROTEIRO_ATUALIZACAO` apontando para um arquivo de registro.
+ * Se esta não é a versão alvo e o inicializador não acabou de desfazer uma
+ * troca, baixa a atualização e reabre; senão, anota que chegou e fecha.
+ */
+async function roteiroDeAtualizacao() {
+  const registro = process.env.WB2_ROTEIRO_ATUALIZACAO;
+  const anotar = (linha) => fs.appendFile(registro, `${JSON.stringify(linha)}\n`, 'utf8');
+  const estado = await atualizador.estado();
+  if (estado.versao === process.env.WB2_ROTEIRO_ALVO || estado.revertida) {
+    await anotar({ versao: estado.versao, revertida: estado.revertida, fim: true });
+    app.exit(0);
+    return;
+  }
+  try {
+    const r = await atualizador.baixar();
+    await anotar({ versao: estado.versao, baixou: r.versao });
+    app.relaunch();
+    app.exit(0);
+  } catch (e) {
+    await anotar({ versao: estado.versao, erro: String(e?.message ?? e), fim: true });
+    app.exit(0);
+  }
+}
 
 /** Pasta onde ficam os saves do jogador (fora do projeto, no perfil do usuário). */
 function pastaSaves() {
@@ -64,7 +117,10 @@ function criarJanela() {
     },
   });
 
-  janela.once('ready-to-show', () => janela.show());
+  janela.once('ready-to-show', () => {
+    janela.show();
+    avisarQueAbriu();
+  });
 
   if (URL_DEV) {
     janela.loadURL(URL_DEV);
@@ -121,7 +177,38 @@ ipcMain.handle('save:apagar', async (_e, nome) => {
 ipcMain.handle('app:pastaSaves', async () => garantirPastaSaves());
 
 ipcMain.handle('app:erroFatal', async (_e, mensagem) => {
+  // Numa versão recém-instalada, quem decide é o inicializador: ele volta para
+  // a versão anterior em vez de deixar o jogador olhando uma caixa de erro.
+  if (!erroAntesDeConfirmar && process.env.WB2_ACABOU_DE_ATUALIZAR) {
+    erroAntesDeConfirmar = true;
+    process.emit('wb2:falhou', String(mensagem));
+    return;
+  }
+  erroAntesDeConfirmar = true;
   dialog.showErrorBox('WorldBox 2 quebrou', String(mensagem));
+});
+
+// ------------------------------------------------------------- atualização
+
+ipcMain.handle('atualizacao:estado', async () => atualizador.estado());
+ipcMain.handle('atualizacao:checar', async () => {
+  try {
+    return { ok: true, ...(await atualizador.checar()) };
+  } catch (e) {
+    return { ok: false, erro: String(e?.message ?? e) };
+  }
+});
+ipcMain.handle('atualizacao:baixar', async () => {
+  try {
+    return { ok: true, ...(await atualizador.baixar()) };
+  } catch (e) {
+    return { ok: false, erro: String(e?.message ?? e) };
+  }
+});
+// Reabre o jogo: é no início seguinte que o inicializador troca a versão.
+ipcMain.handle('atualizacao:reabrir', async () => {
+  app.relaunch();
+  app.exit(0);
 });
 
 // ------------------------------------------------------------------ ciclo de vida
@@ -373,6 +460,15 @@ async function tirarPrints(janela, pasta) {
     return true;
   `);
   await salvar('4-aba-mundo');
+  // a aba de ajustes depois de procurar atualização (pergunta ao GitHub de verdade)
+  await rodar(`
+    document.querySelector('.aba-btn[data-alvo="config"]')?.click();
+    document.querySelector('.config-grupo.atualizacao')?.scrollIntoView();
+    document.getElementById('btn-att-procurar')?.click();
+    await new Promise((r) => setTimeout(r, 4000));
+    return true;
+  `);
+  await salvar('5-atualizacao');
   app.exit(0);
 }
 

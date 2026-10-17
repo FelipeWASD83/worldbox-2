@@ -31,7 +31,11 @@ Como jogar e o que cada ferramenta faz está no `README.md`.
 | `npm run sim` | Roda N ticks sem janela e relata população, aldeias, guerras, custo por sistema e problemas. |
 | `npm run diag` | Relata de que cada espécie morreu e **quem matou quem**. |
 | `npm run testar-app` | Abre o Electron, pergunta ao jogo como ele está e fecha. |
-| `npm run prints -- <pasta>` | Abre o aplicativo de verdade, monta quatro cenas (inverno de longe e de perto, a ficha de uma pessoa, a aba mundo) e salva cada uma em PNG na pasta. É como uma sessão sem ninguém no PC vê a janela. |
+| `npm run testar-atualizacao` | O botão de atualizar contra um GitHub de mentira num servidor local: acha, baixa, confere, troca, volta atrás, e recusa pacote adulterado, de outro Electron, sem o jogo, com caminho malicioso e na pasta do projeto. Com `-- --electron`, instala de verdade numa pasta temporária e deixa o jogo atualizar e voltar atrás sozinho (uns 3 min; baixa o Electron uma vez, guardado em `%TEMP%\worldbox-2-electron`). |
+| `npm run pacote` | Monta `release/worldbox-2-<versão>.zip` e o `.sha256` dele. |
+| `instalar.bat` | Instala a cópia de jogar (ver "Instalação e atualização"). |
+| `ferramentas\publicar-versao.ps1` | Cria a release no GitHub com o pacote, o `.sha256` e o instalador. **Publicar é decisão do Felipe**, como o push. |
+| `npm run prints -- <pasta>` | Abre o aplicativo de verdade, monta cinco cenas (inverno de longe e de perto, a ficha de uma pessoa, a aba mundo, o botão de atualizar depois de procurar no GitHub) e salva cada uma em PNG na pasta. É como uma sessão sem ninguém no PC vê a janela. |
 | `npm run equilibrio` | Roda várias sementes (uma por processo) e mede a fatia de cada povo, quantas vezes cada um some, a dominância do maior e nascidos em casa contra chegados de fora. `--bal chave=valor` testa um número do balanço sem mexer no arquivo. |
 | `npm test` | Testes de regressão do motor: geração em todos os tamanhos, índice espacial, save, medidor. |
 | `npm run typecheck` | `tsc --noEmit` sobre tudo. |
@@ -298,6 +302,52 @@ desenhos refeitos.
 
 O mapa esticado continua sendo desenhado por baixo: é o que evita buraco na tela
 enquanto os pedaços ficam prontos.
+
+### Instalação e atualização: duas cópias, um botão
+
+Desde a 2.1.0 o jogo tem botão de atualizar pelas releases do GitHub
+(`FelipeWASD83/worldbox-2`, **público desde 17/10/2026, MIT**), como a regra da
+raiz pede para todo app. Ele mexe numa **cópia instalada**, e não na pasta do
+projeto: esta é um repositório git, e trocar arquivos por baixo do git deixaria
+a pasta suja de mudanças que ninguém fez. Na pasta do projeto o botão procura e
+mostra a versão nova, e manda usar `git pull`.
+
+A cópia instalada (`instalador/instalar.ps1`, que o `instalar.bat` chama) fica
+em `%LOCALAPPDATA%\WorldBox 2`:
+
+```
+electron/   o Electron oficial, conferido pelo SHASUMS256 da release dele
+inicio/     o inicializador (instalador/inicio), que o atualizador NUNCA troca
+app/        a versão em uso; nova/ é a baixada, anterior/ a de antes
+estado.json versão, se está em teste, e se a última troca foi desfeita
+```
+
+O atalho abre o Electron apontando para `inicio/`, que põe no lugar a versão
+baixada, carrega o jogo de `app/` e volta para `anterior/` se a nova quebrar
+ao carregar, avisar erro fatal ou não dizer que abriu em 45 s (o jogo emite
+`wb2:abriu` cinco segundos depois de mostrar a janela). **Quem desfaz a troca
+mora fora do que é trocado**, e é só por isso que versão quebrada consegue se
+desfazer.
+
+Três decisões que seguram isso:
+
+- **Sem `.exe` próprio**: o Smart App Control barra binário novo, e o
+  `electron.exe` oficial passa. Por isso não há `electron-builder` na entrega
+  de jogar; o `npm run dist` continua lá, mas o instalador gerado por ele não
+  foi testado contra o SAC.
+- **Zip próprio** (`electron/zip.js`): o pacote é lido na memória e cada
+  caminho é conferido antes de qualquer arquivo ir para o disco. O mesmo código
+  monta o pacote na publicação (`tools/empacotar.ts`), então os dois lados
+  sempre concordam no formato.
+- **O Electron é do instalador, não do pacote.** O `package.json` diz
+  `versaoElectron` (tem de bater com o `node_modules`, o `npm run pacote`
+  confere), e o atualizador recusa versão que peça outro Electron: aí é rodar
+  o instalador de novo.
+
+O `name` do `package.json` do inicializador é `worldbox-2`, igual ao do
+projeto, de propósito: é ele que decide a pasta de dados do Electron, e é o
+que faz a cópia instalada e a da pasta verem os mesmos mundos salvos. Pôr
+`productName` lá mudaria a pasta e esconderia os mundos.
 
 ### As quatro decisões que sustentam o resto
 
@@ -996,8 +1046,9 @@ trinta mil ticks, mapa médio), antes e depois da versão:
   estão no `balanco.ts` e nos dados dos povos; medir com `npm run equilibrio`
   antes de qualquer um, e com doze sementes ou mais: com menos, o ruído é
   maior que o efeito.
-- O worldbox-2 não tem o botão de atualizar pelas releases do GitHub que a
-  regra da raiz pede para todo app (seção 6, "Atualização dentro do app"). O
-  repositório é privado, então isso pede ou um token só de leitura ou tornar o
-  repositório público, e as duas coisas são decisão do Felipe.
+- O botão de atualizar existe desde a 2.1.0, mas **nenhuma release foi
+  publicada ainda**: até o Felipe rodar o `ferramentas\publicar-versao.ps1`
+  (depois do push), o botão responde que o repositório não tem versão
+  publicada, e o instalador de uma linha não tem de onde baixar. O teste com a
+  janela de verdade usou um GitHub de mentira.
 - Árvore no inverno continua verde (a neve cobre o chão, não a copa).

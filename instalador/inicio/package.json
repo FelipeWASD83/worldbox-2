@@ -1,0 +1,6 @@
+{
+  "name": "worldbox-2",
+  "private": true,
+  "type": "module",
+  "main": "inicio.js"
+}

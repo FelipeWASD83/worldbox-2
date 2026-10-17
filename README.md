@@ -36,6 +36,31 @@ npm run dist
 
 O instalador sai na pasta `release/`.
 
+### Instalar como aplicativo (e atualizar pelo botão)
+
+Dois cliques no `instalar.bat` desta pasta. Ele instala o jogo em
+`%LOCALAPPDATA%\WorldBox 2` e cria o atalho **WorldBox 2** na área de trabalho
+e no menu Iniciar. Na primeira vez ele baixa o Electron oficial (uns 110 MB) e
+confere antes de usar. Rodar de novo reinstala com o código atual da pasta.
+
+Sem a pasta do projeto, o mesmo instalador sai da release mais nova:
+
+```powershell
+& ([scriptblock]::Create((irm https://github.com/FelipeWASD83/worldbox-2/releases/latest/download/instalar.ps1)))
+```
+
+No jogo instalado, a aba **ajustes** tem o grupo **Atualização**: a sua
+versão, **Procurar atualização**, o que mudou e **Atualizar**. O pacote novo é
+conferido antes de trocar qualquer coisa, os mundos salvos nunca são tocados, e
+se a versão nova não abrir o jogo volta sozinho para a anterior. Na pasta do
+projeto o botão só mostra a versão nova: ali se atualiza com `git pull`.
+
+Para remover a instalação (os mundos ficam):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File instalador\instalar.ps1 -Remover
+```
+
 ---
 
 ## Como se joga
@@ -475,6 +500,8 @@ npm run diag      # de que cada espécie morreu e quem matou quem
 npm run testar-app  # abre o aplicativo, exercita os painéis e fecha
 npm run equilibrio  # roda várias sementes e mede o equilíbrio entre os povos
 npm run prints -- prints  # abre o app e salva prints de conferência em PNG
+npm run testar-atualizacao  # o botão de atualizar contra um GitHub de mentira
+npm run testar-atualizacao -- --electron  # o mesmo com a janela de verdade (instala numa pasta temporária)
 npm run typecheck
 ```
 

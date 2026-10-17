@@ -2,6 +2,18 @@
 
 A versão mais nova fica em cima. Ela mora aqui e no `package.json`, sempre com o mesmo número.
 
+## 2.1.0 (17/10/2026)
+
+**Novo**
+
+- **Instalar como aplicativo.** Dois cliques no `instalar.bat` da pasta do projeto instalam o jogo em `%LOCALAPPDATA%\WorldBox 2`, com atalho "WorldBox 2" na área de trabalho e no menu Iniciar. Ele baixa o Electron oficial e confere pelo SHA-256 antes de usar. Os mundos salvos são os mesmos de antes.
+- **Botão de atualizar**, na aba de ajustes: mostra a sua versão, procura a mais nova no GitHub, mostra o que mudou e atualiza. O pacote é conferido pelo SHA-256 antes de trocar qualquer coisa, só o código do jogo é trocado (os mundos salvos nunca) e, se a versão nova não abrir, o jogo volta sozinho para a anterior e avisa.
+- Rodando da pasta do projeto, o botão procura e mostra a versão nova, mas manda atualizar com `git pull`: quem se atualiza pelo botão é a cópia instalada.
+
+**Mudou**
+
+- O repositório no GitHub passou a ser público, com licença MIT.
+
 ## 2.0.0 (16/10/2026)
 
 O mundo ganhou ano com estações, gente com ofício, som, bicho que dá passo e criatura que acha o caminho. Fecha tudo o que estava aberto no roteiro.

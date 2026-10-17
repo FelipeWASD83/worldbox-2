@@ -652,3 +652,18 @@ dialog menu {
 .relogio b.estacao[data-estacao="1"] { color: #e8c45a; }
 .relogio b.estacao[data-estacao="2"] { color: #d98a4a; }
 .relogio b.estacao[data-estacao="3"] { color: #a9c8e6; }
+
+/* Atualização: o grupo é mais largo que os outros porque mostra o que mudou. */
+.config-grupo.atualizacao { min-width: 230px; max-width: 320px; }
+.att-status { font-size: 11px; line-height: 1.35; color: var(--texto-2); }
+.att-status[data-tom="bom"] { color: #7fc48a; }
+.att-status[data-tom="ruim"] { color: #e08a7a; }
+.att-status[data-tom="novo"] { color: #e8c45a; }
+.att-notas {
+  margin: 0;
+  max-height: 64px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font: 400 10.5px/1.35 var(--mono);
+  color: var(--texto-3);
+}

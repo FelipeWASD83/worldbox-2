@@ -4,6 +4,7 @@ import { CATEGORIAS, poderes } from './sim/poderes.js';
 import { especies } from './dados/especies.js';
 import { Cronica } from './ui/cronica.js';
 import { Som } from './ui/som.js';
+import { montarAtualizacao } from './ui/atualizacao.js';
 import { Inspetor } from './ui/inspetor.js';
 import { PainelEstatisticas } from './ui/estatisticas.js';
 import { PainelComando } from './ui/comando.js';
@@ -633,6 +634,8 @@ const elGuerras = $('guerras-topo');
 const elDesempenho = $('desempenho');
 // O medidor de desempenho é coisa de quem está mexendo no jogo, não de quem
 // está jogando: nasce escondido e liga na aba de ajustes.
+montarAtualizacao(window.wb2?.atualizacao);
+
 // volume e mudo: o que estava guardado aparece no controle, e mexer grava
 {
   const rng = $<HTMLInputElement>('rng-volume');

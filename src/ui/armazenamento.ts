@@ -7,6 +7,8 @@
  * armazenamento do navegador. A interface não precisa saber qual dos dois é.
  */
 
+import type { PonteAtualizacao } from './atualizacao.js';
+
 export interface InfoSave {
   nome: string;
   bytes: number;
@@ -23,6 +25,7 @@ interface PonteNativa {
     pasta(): Promise<string>;
   };
   erroFatal(mensagem: string): Promise<void>;
+  atualizacao?: PonteAtualizacao;
 }
 
 declare global {
